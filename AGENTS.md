@@ -141,8 +141,12 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
   projected them into `segments` (skewed stubs) then drew them on a static SVG
   overlay (broke on drag, looked different from selection edges) — both removed for
   this one simple path. elk still receives the cross-layer edges for node ordering
-  / crossing-minimisation, but its edge *routes* go unused. Trade-off: round-taxi is
-  per-edge (no channel separation), which the clean layer-row layout keeps tidy.
+  / crossing-minimisation, but its edge *routes* go unused. round-taxi is per-edge
+  (no channel separation), so wires sharing a corridor would stack their horizontal
+  jogs at one height and overlap (the K2,2 crossing between the top two rows and the
+  next). `edgeTurn` fixes this: grouped by layer-gap, each cross-layer wire gets a
+  distinct `taxi-turn` height (applied in `layout()`, with `taxi-direction: vertical`)
+  so corridor-sharing pairs cross at a point instead of running together.
 - **The camera is the user's.** Open/close/select never move the viewport —
   `rebuild` snapshots zoom+pan and restores them *exactly* after the elk re-layout
   (no counter-pan, no fit), so the interacted node opens in place while unrelated

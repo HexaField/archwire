@@ -211,6 +211,27 @@ export function ConceptView(props: {
     return layerVals.length - 1 - (layerRank.get(l) ?? 0);
   };
 
+  // Cross-layer wires between the same two rows share a corridor; round-taxi would
+  // stack their horizontal jogs at one height and overlap them (the K2,2 crossing).
+  // Give each a distinct turn height so they separate and cross cleanly at a point.
+  const edgeTurn = new Map<string, string>();
+  {
+    const groups = new Map<string, string[]>();
+    for (const e of aggEdges) {
+      const ls = byId.get(e.source)?.layer ?? 0;
+      const lt = byId.get(e.target)?.layer ?? 0;
+      if (ls === lt) continue; // same-row wires stay horizontal, no stagger
+      const k = ls < lt ? `${ls}-${lt}` : `${lt}-${ls}`;
+      const arr = groups.get(k) ?? [];
+      arr.push(e.id);
+      groups.set(k, arr);
+    }
+    for (const ids of groups.values()) {
+      const n = ids.length;
+      ids.forEach((id, i) => edgeTurn.set(id, `${n === 1 ? 50 : Math.round(28 + (i * 44) / (n - 1))}%`));
+    }
+  }
+
   function computeElements(): cytoscape.ElementDefinition[] {
     const exp = props.expanded();
     const visible = new Set<string>();
@@ -300,6 +321,12 @@ export function ConceptView(props: {
     pos.forEach((p, id) => {
       const n = cy?.getElementById(id);
       if (n && n.nonempty() && n.isChildless()) n.position({ x: p.x + p.w / 2, y: p.y + p.h / 2 });
+    });
+    // route cross-layer wires vertical-first and stagger the turn so corridor-
+    // sharing pairs (e.g. runtime↔perspective vs neighbourhood↔language) separate
+    edgeTurn.forEach((turn, id) => {
+      const ce = cy?.getElementById(id);
+      if (ce && ce.nonempty()) ce.style({ 'taxi-direction': 'vertical', 'taxi-turn': turn });
     });
   }
 
