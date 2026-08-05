@@ -367,9 +367,13 @@ export function ConceptView(props: {
       const s = e.data('source') as string;
       const t = e.data('target') as string;
       if (s !== topId && t !== topId) return;
-      const other = cy?.getElementById(s === topId ? t : s);
+      const otherId = s === topId ? t : s;
+      const other = cy?.getElementById(otherId);
       if (!other || other.empty()) return;
-      e.data('label', aggLabel.get(e.id()) ?? '');
+      // ONE short label per wire: the selected concept's own relation to the other
+      // end, else the pair's first relation. Short labels don't overlap neighbours.
+      const rel = byId.get(topId)?.relations.find((r) => topOf(r.to) === otherId);
+      e.data('label', rel?.label ?? (aggLabel.get(e.id()) ?? '').split(' / ')[0]);
       e.removeClass('dim').addClass('sel-rel');
       other.removeClass('dim');
       other.ancestors().removeClass('dim');
