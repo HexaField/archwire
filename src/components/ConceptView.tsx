@@ -5,7 +5,6 @@ import type { CodeNode, Concept, ConceptModel } from '../lib/concepts';
 
 const elk = new ELK();
 const MONO = "'SF Mono','Cascadia Code',ui-monospace,monospace";
-type Pt = { x: number; y: number };
 
 const styles: unknown[] = [
   {
@@ -86,15 +85,17 @@ const styles: unknown[] = [
       padding: 5,
     },
   },
-  // at-rest relation wires draw on an SVG overlay (elk's exact orthogonal routes);
-  // only transient selection / thread edges live in cytoscape, hence taxi here.
+  // one edge system: smooth-orthogonal (round-taxi) for every wire, so at-rest and
+  // selected relations look the same and follow node moves.
   {
     selector: 'edge',
     style: {
-      width: 1.3,
+      width: 1.4,
       'line-color': '#3d4b5f',
-      'curve-style': 'taxi',
+      'curve-style': 'round-taxi',
       'taxi-direction': 'auto',
+      'taxi-turn': '50%',
+      'taxi-radius': 8,
       'target-arrow-shape': 'none',
       opacity: 0.4,
     },
@@ -105,10 +106,10 @@ const styles: unknown[] = [
   {
     selector: 'edge.sel-rel',
     style: {
-      // transient highlight edges keep the lighter taxi routing (no elk pass)
-      'curve-style': 'taxi',
+      'curve-style': 'round-taxi',
       'taxi-direction': 'auto',
-      'taxi-turn': '45%',
+      'taxi-turn': '50%',
+      'taxi-radius': 8,
       'line-color': '#e3b341',
       'target-arrow-shape': 'triangle',
       'target-arrow-color': '#e3b341',
@@ -126,7 +127,7 @@ const styles: unknown[] = [
     },
   },
   { selector: 'node.thread-step', style: { 'background-color': '#238636', 'border-color': '#3fb950', 'border-width': 2.5, color: '#f0f6fc', 'z-index': 21 } },
-  { selector: 'edge.thread', style: { 'curve-style': 'taxi', 'taxi-direction': 'auto', 'line-color': '#3fb950', 'target-arrow-shape': 'triangle', 'target-arrow-color': '#3fb950', 'arrow-scale': 0.9, width: 2.6, opacity: 0.95, 'z-index': 22 } },
+  { selector: 'edge.thread', style: { 'curve-style': 'round-taxi', 'taxi-direction': 'auto', 'taxi-radius': 8, 'line-color': '#3fb950', 'target-arrow-shape': 'triangle', 'target-arrow-color': '#3fb950', 'arrow-scale': 0.9, width: 2.6, opacity: 0.95, 'z-index': 22 } },
   { selector: 'node.changed', style: { 'border-color': '#d29922', 'border-width': 3, 'z-index': 15 } },
   { selector: 'node.codefile.changed', style: { 'background-color': '#3a2d10', color: '#e3b341', 'border-color': '#d29922' } },
 ];
@@ -148,50 +149,6 @@ export function ConceptView(props: {
   let tip: HTMLDivElement | undefined;
   let cy: cytoscape.Core | undefined;
   let tipOn = false;
-  // SVG overlay that draws elk's exact orthogonal relation routes, behind nodes
-  let edgeSvg: SVGSVGElement | undefined;
-  let edgeG: SVGGElement | undefined;
-  let edgeRoutes: Pt[][] = [];
-
-  // an orthogonal polyline with rounded corners of radius r (clamped per corner)
-  const roundedPath = (pts: Pt[], r: number): string => {
-    if (pts.length < 2) return '';
-    if (pts.length === 2) return `M${pts[0].x} ${pts[0].y}L${pts[1].x} ${pts[1].y}`;
-    let d = `M${pts[0].x} ${pts[0].y}`;
-    for (let i = 1; i < pts.length - 1; i++) {
-      const p0 = pts[i - 1];
-      const p1 = pts[i];
-      const p2 = pts[i + 1];
-      const l1 = Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1;
-      const l2 = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
-      const rr = Math.min(r, l1 / 2, l2 / 2);
-      const a = { x: p1.x - ((p1.x - p0.x) / l1) * rr, y: p1.y - ((p1.y - p0.y) / l1) * rr };
-      const b = { x: p1.x + ((p2.x - p1.x) / l2) * rr, y: p1.y + ((p2.y - p1.y) / l2) * rr };
-      d += `L${a.x} ${a.y}Q${p1.x} ${p1.y} ${b.x} ${b.y}`;
-    }
-    const last = pts[pts.length - 1];
-    return `${d}L${last.x} ${last.y}`;
-  };
-
-  const syncOverlay = () => {
-    if (!edgeG || !cy) return;
-    const p = cy.pan();
-    edgeG.setAttribute('transform', `translate(${p.x} ${p.y}) scale(${cy.zoom()})`);
-  };
-
-  const drawOverlay = () => {
-    if (!edgeG) return;
-    while (edgeG.firstChild) edgeG.removeChild(edgeG.firstChild);
-    const NS = 'http://www.w3.org/2000/svg';
-    for (const pts of edgeRoutes) {
-      if (pts.length < 2) continue;
-      const path = document.createElementNS(NS, 'path');
-      path.setAttribute('d', roundedPath(pts, 12));
-      path.setAttribute('class', 'ov-edge');
-      edgeG.appendChild(path);
-    }
-    syncOverlay();
-  };
 
   const byId = new Map(props.model.concepts.map((c) => [c.id, c]));
   const threadById = new Map(props.model.threads.map((t) => [t.id, t]));
@@ -277,7 +234,7 @@ export function ConceptView(props: {
     for (const n of props.code) {
       if (visible.has(n.id)) els.push({ data: { id: n.id, name: n.label, parent: n.concept ?? n.parent ?? undefined, path: n.path }, classes: `code ${n.kind === 'dir' ? 'codedir' : 'codefile'}` });
     }
-    // aggregated relation wires render on the SVG overlay, not as cy edges
+    for (const e of aggEdges) els.push({ data: { id: e.id, source: e.source, target: e.target } });
     return els;
   }
 
@@ -344,26 +301,6 @@ export function ConceptView(props: {
       const n = cy?.getElementById(id);
       if (n && n.nonempty() && n.isChildless()) n.position({ x: p.x + p.w / 2, y: p.y + p.h / 2 });
     });
-
-    // collect elk's EXACT orthogonal routes (channel-separated bend points) for
-    // the SVG overlay. Cross-layer edges use elk's polyline start→bends→end;
-    // same-layer edges (skipped by elk) draw straight between node centers.
-    const c = cy;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const routeById = new Map<string, Pt[]>();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const e of (res.edges ?? []) as any[]) {
-      const s = e.sections?.[0];
-      if (s) routeById.set(e.id, [s.startPoint, ...(s.bendPoints ?? []), s.endPoint]);
-    }
-    edgeRoutes = aggEdges.map((e) => {
-      const r = routeById.get(e.id);
-      if (r) return r;
-      const sp = c.getElementById(e.source);
-      const tp = c.getElementById(e.target);
-      return sp.nonempty() && tp.nonempty() ? [sp.position(), tp.position()] : [];
-    });
-    drawOverlay();
   }
 
   async function rebuild() {
@@ -456,8 +393,6 @@ export function ConceptView(props: {
     else if (props.thread()) applyThread();
     else if (props.selected()) applySelect();
     else clearMarks();
-    // fade the structural wires while a selection / thread / change is in focus
-    if (edgeSvg) edgeSvg.classList.toggle('dim', !!(props.overlay() || props.thread() || props.selected()));
   }
 
   function showTip(node: cytoscape.NodeSingular, rp: { x: number; y: number }) {
@@ -486,8 +421,6 @@ export function ConceptView(props: {
     if (!container) return;
     cy = cytoscape({ container, style: styles as never, wheelSensitivity: 0.2, layout: { name: 'preset' } });
     cy.add(computeElements());
-    // keep the SVG edge overlay glued to the viewport every render frame
-    cy.on('render', syncOverlay);
     void layout().then(() => cy?.fit(undefined, 38));
 
     // single tap = select + open/close, snappy and with the camera left alone;
@@ -566,9 +499,6 @@ export function ConceptView(props: {
         <button onClick={() => props.collapseAll()} title="collapse everything">▤ collapse</button>
         <span class="hint">click to select · double-click to focus · open / close in the tree →</span>
       </div>
-      <svg class="edge-overlay" ref={edgeSvg}>
-        <g ref={edgeG} />
-      </svg>
       <div ref={container} class="cy" />
       <Show when={layerVals.length > 1}>
         <div class="axis axis-y-top">▲ higher-level</div>

@@ -133,18 +133,16 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
   layering, so same-layer concepts share one row; every relation still renders,
   deduped to one undirected wire per pair with no at-rest arrowheads. Change a
   concept's `layer` and its row moves — position is never arbitrary.
-- **At-rest wires draw on an SVG overlay, not in cytoscape.** cytoscape clips edge
-  endpoints toward node CENTERS, which skewed elk's orthogonal routes at the stubs
-  (its `segments` curve-style can't reproduce elk's ports). So aggregated relation
-  wires are NOT cy edges: `layout()` collects elk's exact polylines
-  (`res.edges[].sections[0]` = start→bends→end; same-layer pairs, skipped by elk,
-  fall back to straight center-to-center) into `edgeRoutes`, and `drawOverlay()`
-  paints them as rounded-corner `<path>`s on an `.edge-overlay` `<svg>` that sits
-  BEHIND the cytoscape canvas so nodes occlude the wires. `syncOverlay()` (bound to
-  cy's `render` event) keeps the overlay `<g transform>` = translate(pan)·scale
-  (zoom), and `vector-effect: non-scaling-stroke` holds the stroke width constant.
-  Selecting / threading / change-focus fades the overlay via a `.dim` class.
-  Transient selection + thread edges still live in cytoscape (taxi + arrowheads).
+- **Edges are ONE cytoscape system: `round-taxi`.** Every wire — at-rest
+  aggregated relations AND transient selection / thread edges — uses the same
+  smooth-orthogonal `round-taxi` curve-style (`taxi-radius` rounds the corners), so
+  they look identical and follow node moves natively (cytoscape re-routes on any
+  position change). We do NOT reproduce elk's edge routes: an earlier version
+  projected them into `segments` (skewed stubs) then drew them on a static SVG
+  overlay (broke on drag, looked different from selection edges) — both removed for
+  this one simple path. elk still receives the cross-layer edges for node ordering
+  / crossing-minimisation, but its edge *routes* go unused. Trade-off: round-taxi is
+  per-edge (no channel separation), which the clean layer-row layout keeps tidy.
 - **The camera is the user's.** Open/close/select never move the viewport —
   `rebuild` snapshots zoom+pan and restores them *exactly* after the elk re-layout
   (no counter-pan, no fit), so the interacted node opens in place while unrelated
