@@ -94,7 +94,9 @@ const styles: unknown[] = [
       width: 1.6,
       'line-color': '#4a5a70',
       'curve-style': 'straight',
-      'target-arrow-shape': 'none',
+      'target-arrow-shape': 'triangle',
+      'target-arrow-color': '#4a5a70',
+      'arrow-scale': 0.85,
       opacity: 0.5,
     },
   },
@@ -106,6 +108,9 @@ const styles: unknown[] = [
     style: {
       'curve-style': 'straight',
       'line-color': '#e3b341',
+      'target-arrow-color': '#e3b341',
+      'source-arrow-color': '#e3b341',
+      'arrow-scale': 0.95,
       opacity: 0.95,
       width: 2,
       label: 'data(label)',
@@ -347,6 +352,7 @@ export function ConceptView(props: {
     cy?.edges('.__te').remove(); // thread edges are the only ones we add
     cy?.elements().removeClass('dim sel sel-rel thread-step thread changed');
     cy?.edges().removeData('label'); // drop the labels put on highlighted wires
+    cy?.edges().removeStyle('source-arrow-shape target-arrow-shape'); // revert arrows
   }
   function applySelect() {
     if (!cy) return;
@@ -374,6 +380,12 @@ export function ConceptView(props: {
       // end, else the pair's first relation. Short labels don't overlap neighbours.
       const rel = byId.get(topId)?.relations.find((r) => topOf(r.to) === otherId);
       e.data('label', rel?.label ?? (aggLabel.get(e.id()) ?? '').split(' / ')[0]);
+      // point the arrow along the relation: at the neighbour for an outgoing
+      // relation, back at the selected concept for an incoming one.
+      const arrowTo = rel ? otherId : topId;
+      e.style(arrowTo === t
+        ? { 'target-arrow-shape': 'triangle', 'source-arrow-shape': 'none' }
+        : { 'source-arrow-shape': 'triangle', 'target-arrow-shape': 'none' });
       e.removeClass('dim').addClass('sel-rel');
       other.removeClass('dim');
       other.ancestors().removeClass('dim');
