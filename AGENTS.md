@@ -90,7 +90,11 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
 - **Hierarchy explorer** (right) — the concept→code tree, sharing the canvas's
   expand state 1-1: open/close a node here or on the canvas and the other follows;
   selection stays in sync, and **hovering a node or a row highlights its twin** in
-  the other panel.
+  the other panel. **Keyboard** (focus the tree first): ↑↓ move a focus cursor
+  through the visible rows, → opens (or steps into the first child if already
+  open), ← closes (or steps to the parent if already closed), Enter selects the
+  focused row. The focus cursor is tree-local and distinct from selection, so
+  arrowing never re-marks the canvas or records undo history.
 - **Threads** — pick one in the sidebar; its concept path lights green with a
   numbered, code-linked walkthrough.
 - **Change graph** (bottom panel) — the initiative's PRs + planned deltas as a DAG

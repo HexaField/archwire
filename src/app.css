@@ -404,6 +404,9 @@ code.path,
 }
 .explorer-head {
   flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   font-size: 11px;
@@ -411,10 +414,24 @@ code.path,
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+.explorer-keys {
+  font-size: 9px;
+  color: var(--text-dim);
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.75;
+}
 .explorer-tree {
   flex: 1 1 auto;
   overflow: auto;
   padding: 6px 0;
+}
+.explorer-tree:focus {
+  outline: none;
+}
+.tree-row.foc {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
 }
 .tree-row {
   display: flex;
