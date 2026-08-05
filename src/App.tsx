@@ -231,7 +231,8 @@ export function App() {
                       <div class="stat-card"><div class="stat-number">{changes()?.nodes.length ?? 0}</div><div class="stat-label">changes</div></div>
                     </div>
                     <h3>How to use</h3>
-                    <div class="detail-row"><span class="detail-label">Click</span> a concept → open its code + relations</div>
+                    <div class="detail-row"><span class="detail-label">Click</span> a node → select it + see relations</div>
+                    <div class="detail-row"><span class="detail-label">Tree →</span> open / close nodes (↑↓ ←→ ⏎)</div>
                     <div class="detail-row"><span class="detail-label">Thread</span> → follow a flow across concepts</div>
                     <div class="detail-row"><span class="detail-label">Change</span> → overlay a PR's impact on the map</div>
                     <h3>Threads</h3>
@@ -345,7 +346,6 @@ export function App() {
               setThread={setCThr}
               overlay={overlay}
               expanded={expanded}
-              toggleExpand={toggleExpand}
               collapseAll={collapseAll}
               hovered={hovered}
               setHovered={setHovered}

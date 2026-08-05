@@ -80,13 +80,12 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
 
 - **Concept⇢code canvas** — concepts as labelled container boxes (Perspective ⊃
   Link + SubjectClass …), elkjs compound layout, aggregated orthogonal wires at
-  rest. **Click a concept to open its real code** (its `implementedBy` tree nests
-  inside it; click a dir to go deeper to files) and select it (relations shown).
-  The camera stays put on open/select — **double-click a node to frame it** (the
-  dedicated camera action; the toolbar `fit` button frames everything). Progressive
-  disclosure on ONE surface — high-level → file. Hover for a tooltip. The landing
-  shows the six top concepts collapsed; a node's sub-concepts + code reveal on
-  expand (children gated by the shared expand set).
+  rest. **Click a node to select it** (relations + sidebar detail); the canvas
+  never opens/closes on click and never moves the camera. **Double-click frames**
+  a node (the toolbar `fit` button frames everything). Open/close a concept from
+  the **tree** (arrow icons / keyboard) — the canvas mirrors it 1-1, nesting the
+  real `implementedBy` code inside. Progressive disclosure high-level → file; hover
+  for a tooltip. The landing shows the six top concepts collapsed.
 - **Hierarchy explorer** (right) — the concept→code tree, sharing the canvas's
   expand state 1-1: open/close a node here or on the canvas and the other follows;
   selection stays in sync, and **hovering a node or a row highlights its twin** in

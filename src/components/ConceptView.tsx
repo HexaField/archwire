@@ -135,7 +135,6 @@ export function ConceptView(props: {
   setThread: (v: string | null) => void;
   overlay: () => { concepts: Set<string>; paths: string[] } | null;
   expanded: () => Set<string>;
-  toggleExpand: (id: string) => void;
   collapseAll: () => void;
   hovered: () => string | null;
   setHovered: (v: string | null) => void;
@@ -170,11 +169,6 @@ export function ConceptView(props: {
       codeKids.set(n.parent, a);
     }
   }
-  const hasChildren = (id: string) => {
-    if (byId.has(id)) return (subConcepts.get(id)?.length ?? 0) + (conceptCode.get(id)?.length ?? 0) > 0;
-    return (codeKids.get(id)?.length ?? 0) > 0;
-  };
-
   // relations aggregated to top-level groups → a few clean wires
   const topOf = (id: string) => {
     let c = byId.get(id);
@@ -404,8 +398,7 @@ export function ConceptView(props: {
       const node = ev.target as cytoscape.NodeSingular;
       const id = node.id();
       const now = performance.now();
-      // a second tap inside the window = double-click → frame the FIRST tapped
-      // node; the first tap's expand may have shifted what sits under the cursor.
+      // a second tap inside the window = double-click → frame the node
       const dblOf = now - lastTapAt < 320 ? lastTapId : null;
       lastTapId = id;
       lastTapAt = now;
@@ -417,16 +410,11 @@ export function ConceptView(props: {
         }
         return;
       }
-      if (byId.has(id)) {
-        props.setThread(null);
-        props.setSelected(id);
-        if (hasChildren(id)) props.toggleExpand(id);
-      } else if (node.hasClass('codedir')) {
-        props.setSelected(id);
-        props.toggleExpand(id);
-      } else {
-        props.setSelected(props.selected() === id ? null : id);
-      }
+      // single tap = select only. Opening/closing lives on the tree (they mirror
+      // 1-1) and on double-click framing — a canvas click never re-lays-out.
+      props.setThread(null);
+      if (byId.has(id) || node.hasClass('codedir')) props.setSelected(id);
+      else props.setSelected(props.selected() === id ? null : id);
     });
     cy.on('tap', (ev) => {
       if (ev.target === cy) {
@@ -474,7 +462,7 @@ export function ConceptView(props: {
       <div class="canvas-toolbar">
         <button onClick={() => cy?.fit(undefined, 38)} title="fit to view">⤢ fit</button>
         <button onClick={() => props.collapseAll()} title="collapse everything">▤ collapse</button>
-        <span class="hint">click to open · again to close · double-click to focus</span>
+        <span class="hint">click to select · double-click to focus · open / close in the tree →</span>
       </div>
       <div ref={container} class="cy" />
       <div id="tip" ref={tip}>
