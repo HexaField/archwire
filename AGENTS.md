@@ -147,6 +147,13 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
   node-centre stub or sharing a corridor. Same-layer wires stay centre-to-centre.
   elk still lays out the nodes; its edge routes go unused. (True orthogonal channels
   would need elk routing + locked node positions — a heavier, non-drag path.)
+- **Selection highlights the SAME wires, one label per pair.** `applySelect`
+  does NOT draw new edges — it adds `.sel-rel` (amber) to the existing aggregated
+  wires touching the concept and sets each one's `data(label)` to `aggLabel` (every
+  relation for that pair joined, e.g. "hosted by / hosts"). So connections never
+  jump on select, and a bidirectional pair shows one combined label instead of two
+  stacked ones. `clearMarks` drops the `.sel-rel` class and the label data (it does
+  NOT delete the wires — only thread `.__te` edges get added/removed).
 - **The camera is the user's.** Open/close/select never move the viewport —
   `rebuild` snapshots zoom+pan and restores them *exactly* after the elk re-layout
   (no counter-pan, no fit), so the interacted node opens in place while unrelated

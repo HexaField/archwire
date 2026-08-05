@@ -106,11 +106,8 @@ const styles: unknown[] = [
     style: {
       'curve-style': 'straight',
       'line-color': '#e3b341',
-      'target-arrow-shape': 'triangle',
-      'target-arrow-color': '#e3b341',
-      'arrow-scale': 0.9,
       opacity: 0.95,
-      width: 1.8,
+      width: 2,
       label: 'data(label)',
       'font-family': MONO,
       'font-size': 9,
@@ -180,6 +177,7 @@ export function ConceptView(props: {
   // (runtime hosts language / language hosted by runtime) collapse to a single
   // line, so the rest view shows "these relate", not two crossing arrows.
   const aggEdges: { id: string; source: string; target: string }[] = [];
+  const aggLabelSet = new Map<string, string[]>();
   {
     const seen = new Set<string>();
     for (const c of props.model.concepts) {
@@ -189,17 +187,23 @@ export function ConceptView(props: {
         const b = topOf(r.to);
         if (a === b) continue;
         const k = a < b ? `${a}~${b}` : `${b}~${a}`;
+        const eid = `agg__${k}`;
+        // gather every relation label for the pair (both directions) → one wire,
+        // one combined label, so bidirectional labels never stack.
+        const labels = aggLabelSet.get(eid) ?? [];
+        if (r.label && !labels.includes(r.label)) labels.push(r.label);
+        aggLabelSet.set(eid, labels);
         if (seen.has(k)) continue;
         seen.add(k);
-        // orient source = higher-layer (top) node so the taxi-turn stagger measures
-        // every wire's jog from a consistent top reference (else jogs collide)
+        // orient source = higher-layer (top) node so ports spread top→bottom
         const la = byId.get(a)?.layer ?? 0;
         const lb = byId.get(b)?.layer ?? 0;
         const [src, tgt] = la >= lb ? [a, b] : [b, a];
-        aggEdges.push({ id: `agg__${k}`, source: src, target: tgt });
+        aggEdges.push({ id: eid, source: src, target: tgt });
       }
     }
   }
+  const aggLabel = new Map([...aggLabelSet].map(([id, arr]) => [id, arr.join(' / ')]));
 
   // vertical axis = abstraction layer. Partition top concepts into rows by their
   // semantic `layer`; foundational (lowest layer) sits at the bottom.
@@ -340,8 +344,9 @@ export function ConceptView(props: {
   }
 
   function clearMarks() {
-    cy?.edges('.__sel, .__te').remove();
+    cy?.edges('.__te').remove(); // thread edges are the only ones we add
     cy?.elements().removeClass('dim sel sel-rel thread-step thread changed');
+    cy?.edges().removeData('label'); // drop the labels put on highlighted wires
   }
   function applySelect() {
     if (!cy) return;
@@ -355,22 +360,20 @@ export function ConceptView(props: {
     n.ancestors().removeClass('dim');
     n.descendants().removeClass('dim');
     if (!byId.has(id)) return; // code node: spotlight only
-    let idx = 0;
-    const link = (a: string, b: string, label: string) => {
-      // both endpoints must be on the canvas — a relation whose other end sits
-      // inside a still-collapsed group has no node to attach to. Adding an edge
-      // with a missing source/target throws and aborts the render.
-      const an = cy?.getElementById(a);
-      const bn = cy?.getElementById(b);
-      if (!an || an.empty() || !bn || bn.empty()) return;
-      an.removeClass('dim');
-      an.ancestors().removeClass('dim');
-      bn.removeClass('dim');
-      bn.ancestors().removeClass('dim');
-      cy?.add({ group: 'edges', data: { id: `__sel${idx++}`, source: a, target: b, label }, classes: '__sel sel-rel' } as cytoscape.ElementDefinition);
-    };
-    byId.get(id)?.relations.filter((r) => byId.has(r.to)).forEach((r) => link(id, r.to, r.label));
-    props.model.concepts.forEach((o) => o.relations.forEach((r) => { if (r.to === id) link(o.id, id, r.label); }));
+    // highlight the SAME aggregated wires that show at rest (so connections don't
+    // jump), and label each with its combined relation(s) — one label per pair.
+    const topId = topOf(id);
+    cy.edges().forEach((e) => {
+      const s = e.data('source') as string;
+      const t = e.data('target') as string;
+      if (s !== topId && t !== topId) return;
+      const other = cy?.getElementById(s === topId ? t : s);
+      if (!other || other.empty()) return;
+      e.data('label', aggLabel.get(e.id()) ?? '');
+      e.removeClass('dim').addClass('sel-rel');
+      other.removeClass('dim');
+      other.ancestors().removeClass('dim');
+    });
   }
   function applyThread() {
     if (!cy) return;
