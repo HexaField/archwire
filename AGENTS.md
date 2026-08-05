@@ -12,9 +12,10 @@ extracted once and stays stable; the code grounding hangs off it; git/plan chang
 project *up* onto it (a changed file lights its concept). Nothing is hand-drawn.
 
 The UI: a GitHub-dark, monospace shell — a left **sidebar** (overview / concept /
-code / thread / change detail, footer stats), a **main** canvas (the concept⇢code
-graph), and a bottom **change-graph** panel. `App.tsx` owns the shared selection
-+ overlay state.
+code / thread / change detail), a **main** canvas (the concept⇢code graph), a
+bottom **change-graph** panel, and a right **hierarchy explorer** (a tree that
+mirrors the canvas 1-1). `App.tsx` owns the shared selection + **expand** + overlay
+state; the canvas and the tree both read/write the one expand set.
 
 ## Stack
 
@@ -68,6 +69,7 @@ src/App.tsx              # sidebar shell + canvas + change panel; owns selection
 src/lib/concepts.ts      # concept / code / change model types
 src/components/ConceptView.tsx # the continuous concept⇢code canvas (elkjs compound, progressive disclosure, overlay)
 src/components/GitGraph.tsx     # bottom change-graph panel (SVG DAG of PRs/plans; click → overlay)
+src/components/HierarchyExplorer.tsx # right tree explorer — shares the expand state with the canvas 1-1
 src/components/GraphView.tsx    # (unused) structural coupling-scatter — returns as a lens
 src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns as a lens
 ```
@@ -79,6 +81,11 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
   rest. **Click a concept to open its real code** (its `implementedBy` tree nests
   inside it; click a dir to go deeper to files) and focus it (relations shown).
   Progressive disclosure on ONE surface — high-level → file. Hover for a tooltip.
+  The landing shows the six top concepts collapsed; a node's sub-concepts + code
+  reveal on expand (children gated by the shared expand set).
+- **Hierarchy explorer** (right) — the concept→code tree, sharing the canvas's
+  expand state 1-1: open/close a node here or on the canvas and the other follows;
+  selection stays in sync.
 - **Threads** — pick one in the sidebar; its concept path lights green with a
   numbered, code-linked walkthrough.
 - **Change graph** (bottom panel) — the initiative's PRs + planned deltas as a DAG

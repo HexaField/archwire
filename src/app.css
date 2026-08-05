@@ -343,6 +343,69 @@ code.path,
   font-size: 11px;
   color: var(--text-dim);
 }
+
+/* right hierarchy explorer */
+#explorer {
+  width: 300px;
+  min-width: 300px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.explorer-head {
+  flex: 0 0 auto;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.explorer-tree {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 6px 0;
+}
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tree-row:hover {
+  background: var(--surface2);
+}
+.tree-row.sel {
+  background: rgba(88, 166, 255, 0.14);
+}
+.tree-arrow {
+  width: 10px;
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: 8px;
+  text-align: center;
+}
+.tree-label.concept {
+  color: #adbac7;
+}
+.tree-label.concept.pillar {
+  color: #58a6ff;
+  font-weight: 600;
+}
+.tree-label.dir {
+  color: #7d8fa3;
+}
+.tree-label.file {
+  color: #6e7681;
+}
+.tree-row.sel .tree-label {
+  color: var(--text-bright);
+}
 .cy {
   position: absolute;
   inset: 0;

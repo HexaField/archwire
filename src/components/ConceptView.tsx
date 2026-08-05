@@ -1,7 +1,7 @@
 import { createEffect, on, onCleanup, onMount } from 'solid-js';
 import cytoscape from 'cytoscape';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import type { CodeNode, ConceptModel } from '../lib/concepts';
+import type { CodeNode, Concept, ConceptModel } from '../lib/concepts';
 
 const elk = new ELK();
 const MONO = "'SF Mono','Cascadia Code',ui-monospace,monospace";
@@ -29,13 +29,7 @@ const styles: unknown[] = [
   },
   {
     selector: 'node.concept.pillar',
-    style: {
-      'background-color': '#1f6feb',
-      'border-color': '#58a6ff',
-      color: '#f0f6fc',
-      'font-size': 12,
-      'font-weight': 600,
-    },
+    style: { 'background-color': '#1f6feb', 'border-color': '#58a6ff', color: '#f0f6fc', 'font-size': 12, 'font-weight': 600 },
   },
   {
     selector: 'node.concept:parent',
@@ -125,15 +119,8 @@ const styles: unknown[] = [
       'z-index': 20,
     },
   },
-  {
-    selector: 'node.thread-step',
-    style: { 'background-color': '#238636', 'border-color': '#3fb950', 'border-width': 2.5, color: '#f0f6fc', 'z-index': 21 },
-  },
-  {
-    selector: 'edge.thread',
-    style: { 'line-color': '#3fb950', 'target-arrow-color': '#3fb950', width: 2.6, opacity: 0.95, 'z-index': 22 },
-  },
-  // change overlay
+  { selector: 'node.thread-step', style: { 'background-color': '#238636', 'border-color': '#3fb950', 'border-width': 2.5, color: '#f0f6fc', 'z-index': 21 } },
+  { selector: 'edge.thread', style: { 'line-color': '#3fb950', 'target-arrow-color': '#3fb950', width: 2.6, opacity: 0.95, 'z-index': 22 } },
   { selector: 'node.changed', style: { 'border-color': '#d29922', 'border-width': 3, 'z-index': 15 } },
   { selector: 'node.codefile.changed', style: { 'background-color': '#3a2d10', color: '#e3b341', 'border-color': '#d29922' } },
 ];
@@ -146,18 +133,25 @@ export function ConceptView(props: {
   thread: () => string | null;
   setThread: (v: string | null) => void;
   overlay: () => { concepts: Set<string>; paths: string[] } | null;
+  expanded: () => Set<string>;
+  toggleExpand: (id: string) => void;
+  collapseAll: () => void;
 }) {
   let container: HTMLDivElement | undefined;
   let tip: HTMLDivElement | undefined;
   let cy: cytoscape.Core | undefined;
   let hovered = false;
-  const expanded = new Set<string>();
 
   const byId = new Map(props.model.concepts.map((c) => [c.id, c]));
   const threadById = new Map(props.model.threads.map((t) => [t.id, t]));
-  const childrenOf = (id: string) => props.model.concepts.filter((c) => c.parent === id);
-
-  // code indexes
+  const subConcepts = new Map<string, Concept[]>();
+  for (const c of props.model.concepts) {
+    if (c.parent) {
+      const a = subConcepts.get(c.parent) ?? [];
+      a.push(c);
+      subConcepts.set(c.parent, a);
+    }
+  }
   const codeById = new Map(props.code.map((n) => [n.id, n]));
   const codeKids = new Map<string, CodeNode[]>();
   const conceptCode = new Map<string, CodeNode[]>();
@@ -173,13 +167,12 @@ export function ConceptView(props: {
       codeKids.set(n.parent, a);
     }
   }
-  const hasChildrenCode = (id: string) => {
-    const c = byId.get(id);
-    if (c) return (conceptCode.get(id)?.length ?? 0) > 0;
+  const hasChildren = (id: string) => {
+    if (byId.has(id)) return (subConcepts.get(id)?.length ?? 0) + (conceptCode.get(id)?.length ?? 0) > 0;
     return (codeKids.get(id)?.length ?? 0) > 0;
   };
 
-  // aggregate fine-grained relations up to top-level groups → a few clean wires
+  // relations aggregated to top-level groups → a few clean wires
   const topOf = (id: string) => {
     let c = byId.get(id);
     while (c && c.parent) c = byId.get(c.parent);
@@ -203,57 +196,37 @@ export function ConceptView(props: {
   }
 
   function computeElements(): cytoscape.ElementDefinition[] {
-    const els: cytoscape.ElementDefinition[] = props.model.concepts.map((c) => ({
-      data: { id: c.id, name: c.name, parent: c.parent ?? undefined },
-      classes: `concept${c.pillar ? ' pillar' : ''}`,
-    }));
-    // visible code = children of any expanded node, transitively
+    const exp = props.expanded();
     const visible = new Set<string>();
-    const reveal = (n: CodeNode) => {
+    const revealCode = (n: CodeNode) => {
       visible.add(n.id);
-      if (expanded.has(n.id)) (codeKids.get(n.id) ?? []).forEach(reveal);
+      if (exp.has(n.id)) (codeKids.get(n.id) ?? []).forEach(revealCode);
     };
+    const revealConcept = (c: Concept) => {
+      visible.add(c.id);
+      if (exp.has(c.id)) {
+        (subConcepts.get(c.id) ?? []).forEach(revealConcept);
+        (conceptCode.get(c.id) ?? []).forEach(revealCode);
+      }
+    };
+    props.model.concepts.filter((c) => !c.parent).forEach(revealConcept);
+
+    const els: cytoscape.ElementDefinition[] = [];
     for (const c of props.model.concepts) {
-      if (expanded.has(c.id)) (conceptCode.get(c.id) ?? []).forEach(reveal);
+      if (visible.has(c.id)) els.push({ data: { id: c.id, name: c.name, parent: c.parent ?? undefined }, classes: `concept${c.pillar ? ' pillar' : ''}` });
     }
     for (const n of props.code) {
-      if (!visible.has(n.id)) continue;
-      els.push({
-        data: { id: n.id, name: n.label, parent: n.concept ?? n.parent ?? undefined, path: n.path },
-        classes: `code ${n.kind === 'dir' ? 'codedir' : 'codefile'}`,
-      });
+      if (visible.has(n.id)) els.push({ data: { id: n.id, name: n.label, parent: n.concept ?? n.parent ?? undefined, path: n.path }, classes: `code ${n.kind === 'dir' ? 'codedir' : 'codefile'}` });
     }
     for (const e of aggEdges) els.push({ data: { id: e.id, source: e.source, target: e.target } });
     return els;
   }
 
-  function collapse(id: string) {
-    expanded.delete(id);
-    const kill = (pid: string) => {
-      (codeKids.get(pid) ?? []).forEach((n) => {
-        if (expanded.has(n.id)) expanded.delete(n.id);
-        kill(n.id);
-      });
-    };
-    (conceptCode.get(id) ?? []).forEach((n) => {
-      if (expanded.has(n.id)) expanded.delete(n.id);
-      kill(n.id);
-    });
-    kill(id);
-  }
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function elkTree(id: string, sizes: Map<string, { w: number; h: number }>): any {
-    const kidIds = cy
-      ?.getElementById(id)
-      .children()
-      .map((n) => n.id()) ?? [];
+    const kidIds = cy?.getElementById(id).children().map((n) => n.id()) ?? [];
     if (kidIds.length) {
-      return {
-        id,
-        children: kidIds.map((k) => elkTree(k, sizes)),
-        layoutOptions: { 'elk.padding': '[top=30,left=12,bottom=12,right=12]' },
-      };
+      return { id, children: kidIds.map((k) => elkTree(k, sizes)), layoutOptions: { 'elk.padding': '[top=30,left=12,bottom=12,right=12]' } };
     }
     const s = sizes.get(id) ?? { w: 90, h: 26 };
     return { id, width: s.w, height: s.h };
@@ -298,18 +271,16 @@ export function ConceptView(props: {
     });
   }
 
-  async function rebuild(fitTo?: string) {
+  async function rebuild() {
     if (!cy) return;
     cy.elements().remove();
     cy.add(computeElements());
     await layout();
     if (!cy) return;
-    if (fitTo) {
-      const n = cy.getElementById(fitTo);
-      if (n.nonempty()) cy.animate({ fit: { eles: n.closedNeighborhood().union(n.descendants()), padding: 50 }, duration: 250 });
-    } else {
-      cy.fit(undefined, 36);
-    }
+    const sel = props.selected();
+    const n = sel ? cy.getElementById(sel) : undefined;
+    if (n && n.nonempty()) cy.animate({ fit: { eles: n.closedNeighborhood().union(n.descendants()), padding: 55 }, duration: 220 });
+    else cy.fit(undefined, 38);
     reapply();
   }
 
@@ -317,7 +288,6 @@ export function ConceptView(props: {
     cy?.edges('.__sel, .__te').remove();
     cy?.elements().removeClass('dim sel sel-rel thread-step thread changed');
   }
-
   function applySelect() {
     if (!cy) return;
     clearMarks();
@@ -325,17 +295,11 @@ export function ConceptView(props: {
     if (!id) return;
     const n = cy.getElementById(id);
     if (n.empty()) return;
-    if (!byId.has(id)) {
-      // a code node — just spotlight it in place
-      cy.elements().addClass('dim');
-      n.removeClass('dim').addClass('sel');
-      n.ancestors().removeClass('dim');
-      return;
-    }
     cy.elements().addClass('dim');
     n.removeClass('dim').addClass('sel');
     n.ancestors().removeClass('dim');
-    n.descendants().removeClass('dim'); // keep the concept's opened code visible
+    n.descendants().removeClass('dim');
+    if (!byId.has(id)) return; // code node: spotlight only
     let idx = 0;
     const link = (a: string, b: string, label: string) => {
       const bn = cy?.getElementById(b);
@@ -348,7 +312,6 @@ export function ConceptView(props: {
     byId.get(id)?.relations.filter((r) => byId.has(r.to)).forEach((r) => link(id, r.to, r.label));
     props.model.concepts.forEach((o) => o.relations.forEach((r) => { if (r.to === id) link(o.id, id, r.label); }));
   }
-
   function applyThread() {
     if (!cy) return;
     clearMarks();
@@ -374,37 +337,21 @@ export function ConceptView(props: {
     }
     cy.fit(steps.union(steps.ancestors()).union(cy.elements('.__te')), 80);
   }
-
-  async function applyOverlay() {
+  function applyOverlay() {
     if (!cy) return;
     const o = props.overlay();
     clearMarks();
     if (!o) return;
-    // auto-expand concepts whose changed code should show
-    let changedExpand = false;
-    o.concepts.forEach((cid) => {
-      if (hasChildrenCode(cid) && !expanded.has(cid)) {
-        expanded.add(cid);
-        changedExpand = true;
-      }
-    });
-    if (changedExpand) {
-      await rebuild();
-      if (!cy) return;
-    }
-    // mark changed concepts
     o.concepts.forEach((cid) => cy?.getElementById(cid).addClass('changed'));
-    // mark changed code paths (a node whose path sits under a changed path)
     cy.nodes('.code').forEach((n) => {
       const p = n.data('path') as string;
       if (o.paths.some((cp) => p === cp || p.startsWith(`${cp}/`) || cp.startsWith(`${p}/`))) n.addClass('changed');
     });
     const marked = cy.elements('.changed');
-    if (marked.nonempty()) cy.fit(marked.union(marked.ancestors()), 60);
+    if (marked.nonempty()) cy.fit(marked.union(marked.ancestors()), 55);
   }
-
   function reapply() {
-    if (props.overlay()) void applyOverlay();
+    if (props.overlay()) applyOverlay();
     else if (props.thread()) applyThread();
     else if (props.selected()) applySelect();
     else clearMarks();
@@ -436,39 +383,25 @@ export function ConceptView(props: {
     if (!container) return;
     cy = cytoscape({ container, style: styles as never, wheelSensitivity: 0.2, layout: { name: 'preset' } });
     cy.add(computeElements());
-    void layout().then(() => cy?.fit(undefined, 36));
+    void layout().then(() => cy?.fit(undefined, 38));
 
     cy.on('tap', 'node', (ev) => {
-      const n = ev.target as cytoscape.NodeSingular;
-      const id = n.id();
+      const id = (ev.target as cytoscape.NodeSingular).id();
       if (byId.has(id)) {
         props.setThread(null);
-        if (expanded.has(id)) {
-          props.setSelected(id);
-          reapply();
-        } else if (hasChildrenCode(id) || childrenOf(id).length) {
-          expanded.add(id);
-          props.setSelected(id);
-          void rebuild(id);
-        } else {
-          props.setSelected(props.selected() === id ? null : id);
-          reapply();
-        }
-      } else if (n.hasClass('codedir')) {
-        if (expanded.has(id)) collapse(id);
-        else expanded.add(id);
         props.setSelected(id);
-        void rebuild(expanded.has(id) ? id : undefined);
+        if (hasChildren(id)) props.toggleExpand(id);
+      } else if (ev.target.hasClass('codedir')) {
+        props.setSelected(id);
+        props.toggleExpand(id);
       } else {
         props.setSelected(props.selected() === id ? null : id);
-        reapply();
       }
     });
     cy.on('tap', (ev) => {
       if (ev.target === cy) {
         props.setSelected(null);
         props.setThread(null);
-        reapply();
       }
     });
     cy.on('mouseover', 'node', (ev) => {
@@ -483,27 +416,19 @@ export function ConceptView(props: {
       hideTip();
     });
 
+    createEffect(on(props.expanded, () => void rebuild(), { defer: true }));
     createEffect(on(props.selected, () => { if (!props.overlay() && !props.thread()) applySelect(); }, { defer: true }));
     createEffect(on(props.thread, () => applyThread(), { defer: true }));
-    createEffect(on(props.overlay, () => void applyOverlay(), { defer: true }));
+    createEffect(on(props.overlay, () => applyOverlay(), { defer: true }));
   });
   onCleanup(() => cy?.destroy());
-
-  function collapseAll() {
-    expanded.clear();
-    void rebuild();
-  }
 
   return (
     <div class="concept-map">
       <div class="canvas-toolbar">
-        <button onClick={() => cy?.fit(undefined, 36)} title="fit to view">
-          ⤢ fit
-        </button>
-        <button onClick={collapseAll} title="collapse all code">
-          ▤ collapse
-        </button>
-        <span class="hint">click a concept to open its code · click again to focus</span>
+        <button onClick={() => cy?.fit(undefined, 38)} title="fit to view">⤢ fit</button>
+        <button onClick={() => props.collapseAll()} title="collapse everything">▤ collapse</button>
+        <span class="hint">click a concept to open its code · again to close</span>
       </div>
       <div ref={container} class="cy" />
       <div id="tip" ref={tip}>

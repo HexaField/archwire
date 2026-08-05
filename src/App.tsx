@@ -1,7 +1,8 @@
-import { createSignal, For, Match, onMount, Show, Switch } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, Match, on, onMount, Show, Switch } from 'solid-js';
 import type { ChangeModel, CodeModel, CodeNode, ConceptModel } from './lib/concepts';
 import { ConceptView } from './components/ConceptView';
 import { GitGraph } from './components/GitGraph';
+import { HierarchyExplorer } from './components/HierarchyExplorer';
 
 export function App() {
   const [concepts, setConcepts] = createSignal<ConceptModel | null>(null);
@@ -11,6 +12,7 @@ export function App() {
   const [cSel, setCSel] = createSignal<string | null>(null);
   const [cThr, setCThr] = createSignal<string | null>(null);
   const [changeSel, setChangeSel] = createSignal<string | null>(null);
+  const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
 
   async function loadJson<T>(urls: string[]): Promise<T | null> {
     for (const url of urls) {
@@ -66,6 +68,66 @@ export function App() {
     const ch = selChangeNode();
     return ch ? { concepts: new Set(ch.changedConcepts), paths: ch.changedPaths } : null;
   };
+
+  // shared expand/collapse state (graph canvas + hierarchy explorer mirror it)
+  const idx = createMemo(() => {
+    const cids = new Set((cm()?.concepts ?? []).map((c) => c.id));
+    const sub = new Map<string, string[]>();
+    (cm()?.concepts ?? []).forEach((c) => {
+      if (c.parent) {
+        const a = sub.get(c.parent) ?? [];
+        a.push(c.id);
+        sub.set(c.parent, a);
+      }
+    });
+    const cCode = new Map<string, string[]>();
+    const kids = new Map<string, string[]>();
+    code().forEach((n) => {
+      if (n.concept) {
+        const a = cCode.get(n.concept) ?? [];
+        a.push(n.id);
+        cCode.set(n.concept, a);
+      }
+      if (n.parent) {
+        const a = kids.get(n.parent) ?? [];
+        a.push(n.id);
+        kids.set(n.parent, a);
+      }
+    });
+    return { cids, sub, cCode, kids };
+  });
+  const childIds = (id: string): string[] => {
+    const { cids, sub, cCode, kids } = idx();
+    if (cids.has(id)) return [...(sub.get(id) ?? []), ...(cCode.get(id) ?? [])];
+    return kids.get(id) ?? [];
+  };
+  const collapseDesc = (id: string, set: Set<string>) => {
+    for (const k of childIds(id)) {
+      set.delete(k);
+      collapseDesc(k, set);
+    }
+  };
+  const toggleExpand = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+        collapseDesc(id, next);
+      } else next.add(id);
+      return next;
+    });
+  const collapseAll = () => setExpanded(new Set<string>());
+  // selecting a change opens the concepts it touches, so their changed code shows
+  createEffect(
+    on(changeSel, () => {
+      const ch = selChangeNode();
+      if (ch) setExpanded((prev) => {
+        const next = new Set(prev);
+        ch.changedConcepts.forEach((i) => next.add(i));
+        return next;
+      });
+    }),
+  );
 
   const laneName = (id: string) => changes()?.lanes.find((l) => l.id === id)?.name ?? id;
   const laneColor = (id: string) => changes()?.lanes.find((l) => l.id === id)?.color ?? '#8b949e';
@@ -205,6 +267,9 @@ export function App() {
               thread={cThr}
               setThread={setCThr}
               overlay={overlay}
+              expanded={expanded}
+              toggleExpand={toggleExpand}
+              collapseAll={collapseAll}
             />
           )}
         </Show>
@@ -213,6 +278,18 @@ export function App() {
           {(ch) => <GitGraph model={ch()} selected={changeSel} onSelect={(id) => { setCSel(null); setCThr(null); setChangeSel(id); }} />}
         </Show>
       </div>
+      <Show when={cm()}>
+        {(m) => (
+          <HierarchyExplorer
+            model={m()}
+            code={code()}
+            expanded={expanded}
+            toggleExpand={toggleExpand}
+            selected={cSel}
+            setSelected={(v) => { setChangeSel(null); setCSel(v); }}
+          />
+        )}
+      </Show>
     </div>
   );
 }
