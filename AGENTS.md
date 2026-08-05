@@ -15,7 +15,9 @@ The UI: a GitHub-dark, monospace shell — a left **sidebar** (overview / concep
 code / thread / change detail), a **main** canvas (the concept⇢code graph), a
 bottom **change-graph** panel, and a right **hierarchy explorer** (a tree that
 mirrors the canvas 1-1). `App.tsx` owns the shared selection + **expand** + overlay
-state; the canvas and the tree both read/write the one expand set.
+state; the canvas and the tree both read/write the one expand set. A sidebar
+controls row gives **undo / redo** (Ctrl+Z / Ctrl+Shift+Z) over that state, plus
+**collapse all**.
 
 ## Stack
 
@@ -92,10 +94,12 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
 - **Threads** — pick one in the sidebar; its concept path lights green with a
   numbered, code-linked walkthrough.
 - **Change graph** (bottom panel) — the initiative's PRs + planned deltas as a DAG
-  across lanes (planned nodes dashed). **Click a PR/plan → overlay its impact**:
-  the concepts it touches glow amber, their changed code auto-expands + highlights,
-  and the sidebar lists touched concepts + real code paths. Highest + lowest level
-  impact of a change, at once.
+  across lanes (planned nodes dashed). **Hover a node to preview** its impact — a
+  tooltip (touched concepts + path count) plus the touched concepts glow amber, no
+  state change. **Click to select** it: the amber marks persist and the sidebar
+  lists touched concepts + real code paths. Selecting never auto-expands — the
+  sidebar's **‘reveal on canvas’** button opens the touched concepts down to their
+  changed files on demand (the camera stays put; frame with double-click / fit).
 
 ## Gotchas
 
@@ -120,8 +124,13 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
   concept selects it but never opens). Always guard BOTH endpoints before `cy.add`.
 - **The camera is the user's.** Open/close/select never move the viewport;
   `rebuild` preserves zoom+pan and counter-pans to hold the interacted node still.
-  Only double-click (frame a node), the `fit` button, and thread/overlay framing
-  move the camera.
+  Only double-click (frame a node), the `fit` button, and thread framing move the
+  camera — change hover/click/reveal do not.
+- **History is coalesced.** Undo/redo snapshots `{selection, thread, change,
+  expanded}`. A single interaction fires several signal writes, so the recorder
+  debounces through a microtask — one click = one undo step. Applying a snapshot
+  sets an `applying` guard so it never records itself, and dedupes by value so a
+  no-op never lands on the stack.
 - **Change model is curated.** `changes.json` comes from a git/spec research pass
   (real PR file lists via `gh` + planned deltas from the `.specs`), not a live git
   read. A changed file lights a concept when it sits under one of that concept's

@@ -89,6 +89,17 @@ body {
   color: var(--accent);
   background: rgba(88, 166, 255, 0.12);
 }
+.ctrl-btn:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+.ctrl-btn:disabled:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+.reveal-btn {
+  margin: 2px 0 4px;
+}
 #details {
   flex: 1;
   overflow-y: auto;
@@ -338,6 +349,43 @@ code.path,
 }
 .gitgraph svg text {
   user-select: none;
+}
+.gg-tip {
+  position: fixed;
+  z-index: 40;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  max-width: 340px;
+  font-size: 10px;
+  line-height: 1.5;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+}
+.gg-tip-title {
+  font-weight: 600;
+  color: var(--text-bright);
+  font-size: 11px;
+}
+.gg-tip-meta {
+  color: var(--text-dim);
+  font-size: 9px;
+  margin: 1px 0 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.gg-tip-sum {
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.gg-tip-row {
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.gg-tip-row b {
+  color: var(--accent);
 }
 .panel-sum.small {
   font-size: 11px;

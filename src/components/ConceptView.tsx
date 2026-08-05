@@ -364,8 +364,8 @@ export function ConceptView(props: {
       const p = n.data('path') as string;
       if (o.paths.some((cp) => p === cp || p.startsWith(`${cp}/`) || cp.startsWith(`${p}/`))) n.addClass('changed');
     });
-    const marked = cy.elements('.changed');
-    if (marked.nonempty()) cy.fit(marked.union(marked.ancestors()), 55);
+    // the camera stays put — the sidebar 'reveal on canvas' button opens the
+    // touched code, and double-click / fit frame it on demand.
   }
   function reapply() {
     if (props.overlay()) applyOverlay();
@@ -458,9 +458,11 @@ export function ConceptView(props: {
     });
 
     createEffect(on(props.expanded, () => void rebuild(), { defer: true }));
-    createEffect(on(props.selected, () => { if (!props.overlay() && !props.thread()) applySelect(); }, { defer: true }));
-    createEffect(on(props.thread, () => applyThread(), { defer: true }));
-    createEffect(on(props.overlay, () => applyOverlay(), { defer: true }));
+    // one reconciler; precedence overlay > thread > selection. Routing all three
+    // through it means a hover-preview reverts to the committed marks on mouseout.
+    createEffect(on(props.selected, () => reapply(), { defer: true }));
+    createEffect(on(props.thread, () => reapply(), { defer: true }));
+    createEffect(on(props.overlay, () => reapply(), { defer: true }));
     // mirror the hovered node from the tree (and self) onto the canvas
     createEffect(
       on(props.hovered, (h) => {

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Match, on, onMount, Show, Switch } from 'solid-js';
+import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from 'solid-js';
 import type { ChangeModel, CodeModel, CodeNode, ConceptModel } from './lib/concepts';
 import { ConceptView } from './components/ConceptView';
 import { GitGraph } from './components/GitGraph';
@@ -14,6 +14,7 @@ export function App() {
   const [changeSel, setChangeSel] = createSignal<string | null>(null);
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
   const [hovered, setHovered] = createSignal<string | null>(null);
+  const [hoverChange, setHoverChange] = createSignal<string | null>(null);
 
   async function loadJson<T>(urls: string[]): Promise<T | null> {
     for (const url of urls) {
@@ -65,10 +66,12 @@ export function App() {
   };
   const selChangeNode = () => changes()?.nodes.find((n) => n.id === changeSel());
 
-  const overlay = () => {
-    const ch = selChangeNode();
+  const overlayOf = (id: string | null) => {
+    const ch = id ? changes()?.nodes.find((n) => n.id === id) : undefined;
     return ch ? { concepts: new Set(ch.changedConcepts), paths: ch.changedPaths } : null;
   };
+  // hovering a change previews its impact; the committed (clicked) change persists
+  const overlay = () => overlayOf(hoverChange() ?? changeSel());
 
   // shared expand/collapse state (graph canvas + hierarchy explorer mirror it)
   const idx = createMemo(() => {
@@ -118,17 +121,84 @@ export function App() {
       return next;
     });
   const collapseAll = () => setExpanded(new Set<string>());
-  // selecting a change opens the concepts it touches, so their changed code shows
-  createEffect(
-    on(changeSel, () => {
-      const ch = selChangeNode();
-      if (ch) setExpanded((prev) => {
-        const next = new Set(prev);
-        ch.changedConcepts.forEach((i) => next.add(i));
-        return next;
+  // reveal a change on the canvas: open its touched concepts down to the changed
+  // files (a deliberate button — selecting a change no longer auto-expands).
+  const revealChange = () => {
+    const ch = selChangeNode();
+    if (!ch) return;
+    const cById = codeById();
+    const matches = (p: string) =>
+      ch.changedPaths.some((cp) => p === cp || p.startsWith(`${cp}/`) || cp.startsWith(`${p}/`));
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      ch.changedConcepts.forEach((c) => next.add(c));
+      code().forEach((n) => {
+        if (n.kind !== 'file' || !matches(n.path)) return;
+        // open the owning concept + every ancestor dir so the file surfaces
+        let cur: CodeNode | undefined = n;
+        while (cur) {
+          if (cur.concept) next.add(cur.concept);
+          const par: string | null = cur.parent;
+          if (par) next.add(par);
+          cur = par ? cById.get(par) : undefined;
+        }
       });
-    }),
+      return next;
+    });
+  };
+
+  // ── undo / redo over the view state (selection + expand) ───────────────
+  type Snap = { cSel: string | null; cThr: string | null; changeSel: string | null; expanded: Set<string> };
+  const snapNow = (): Snap => ({ cSel: cSel(), cThr: cThr(), changeSel: changeSel(), expanded: new Set(expanded()) });
+  const snapEq = (a: Snap, b: Snap) =>
+    a.cSel === b.cSel && a.cThr === b.cThr && a.changeSel === b.changeSel &&
+    a.expanded.size === b.expanded.size && [...a.expanded].every((x) => b.expanded.has(x));
+  const [histStack, setHistStack] = createSignal<Snap[]>([snapNow()]);
+  const [histIdx, setHistIdx] = createSignal(0);
+  let applying = false;
+  let recordScheduled = false;
+  // every selection/expand change records one history entry; sync bursts from a
+  // single interaction coalesce through a microtask so one click = one undo step.
+  createEffect(
+    on([cSel, cThr, changeSel, expanded], () => {
+      if (applying) { applying = false; return; }
+      if (recordScheduled) return;
+      recordScheduled = true;
+      queueMicrotask(() => {
+        recordScheduled = false;
+        const s = snapNow();
+        const stack = histStack();
+        const i = histIdx();
+        if (snapEq(s, stack[i])) return;
+        const next = stack.slice(0, i + 1);
+        next.push(s);
+        batch(() => { setHistStack(next); setHistIdx(next.length - 1); });
+      });
+    }, { defer: true }),
   );
+  const applySnap = (s: Snap) => {
+    applying = true;
+    batch(() => {
+      setCThr(s.cThr);
+      setChangeSel(s.changeSel);
+      setCSel(s.cSel);
+      setExpanded(new Set(s.expanded));
+    });
+  };
+  const canUndo = () => histIdx() > 0;
+  const canRedo = () => histIdx() < histStack().length - 1;
+  const undo = () => { if (canUndo()) { const i = histIdx() - 1; setHistIdx(i); applySnap(histStack()[i]); } };
+  const redo = () => { if (canRedo()) { const i = histIdx() + 1; setHistIdx(i); applySnap(histStack()[i]); } };
+  onMount(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
+    };
+    window.addEventListener('keydown', onKey);
+    onCleanup(() => window.removeEventListener('keydown', onKey));
+  });
 
   const laneName = (id: string) => changes()?.lanes.find((l) => l.id === id)?.name ?? id;
   const laneColor = (id: string) => changes()?.lanes.find((l) => l.id === id)?.color ?? '#8b949e';
@@ -139,6 +209,11 @@ export function App() {
         <div id="sidebar-header">
           <h1>archwire</h1>
           <div class="sub">{cm()?.system ?? '—'} · architecture planning</div>
+        </div>
+        <div id="controls">
+          <button class="ctrl-btn" disabled={!canUndo()} onClick={undo} title="undo (Ctrl+Z)">↶ undo</button>
+          <button class="ctrl-btn" disabled={!canRedo()} onClick={redo} title="redo (Ctrl+Shift+Z)">↷ redo</button>
+          <button class="ctrl-btn" onClick={collapseAll} title="collapse everything">▤ collapse all</button>
         </div>
 
         <div id="details">
@@ -189,6 +264,7 @@ export function App() {
                         <span class="tag">{ch().status}</span>
                       </div>
                       <p class="panel-sum">{ch().summary}</p>
+                      <button class="ctrl-btn reveal-btn" onClick={revealChange}>⊕ reveal on canvas</button>
                       <Show when={ch().changedConcepts.length}>
                         <h3>Touches concepts</h3>
                         <ul class="chips"><For each={ch().changedConcepts}>{(id) => <li onClick={() => { setChangeSel(null); setCSel(id); }}>{nameOf(id)}</li>}</For></ul>
@@ -278,7 +354,15 @@ export function App() {
         </Show>
         </div>
         <Show when={changes()}>
-          {(ch) => <GitGraph model={ch()} selected={changeSel} onSelect={(id) => { setCSel(null); setCThr(null); setChangeSel(id); }} />}
+          {(ch) => (
+            <GitGraph
+              model={ch()}
+              selected={changeSel}
+              onSelect={(id) => { setCSel(null); setCThr(null); setChangeSel(id); }}
+              onHover={setHoverChange}
+              conceptName={nameOf}
+            />
+          )}
         </Show>
       </div>
       <Show when={cm()}>

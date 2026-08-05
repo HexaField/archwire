@@ -5,8 +5,11 @@ export function GitGraph(props: {
   model: ChangeModel;
   selected: () => string | null;
   onSelect: (id: string) => void;
+  onHover: (id: string | null) => void;
+  conceptName: (id: string) => string;
 }) {
   const [open, setOpen] = createSignal(true);
+  const [tip, setTip] = createSignal<{ x: number; y: number; n: ChangeNode } | null>(null);
 
   // only the two real lanes get a row; "converged" nodes sit on the right, centred
   const laneRows = props.model.lanes.filter((l) => l.id !== 'converged');
@@ -44,7 +47,7 @@ export function GitGraph(props: {
         <button class="gg-toggle" onClick={() => setOpen(!open())}>
           {open() ? '▾' : '▸'} {props.model.initiative} — change graph
         </button>
-        <span class="gg-hint">click a PR / plan to overlay its impact on the canvas</span>
+        <span class="gg-hint">hover to preview · click to select — then “reveal on canvas” in the sidebar</span>
       </div>
       <Show when={open()}>
         <div class="gg-scroll">
@@ -93,19 +96,28 @@ export function GitGraph(props: {
                 const color = laneColor(n.lane);
                 const merge = isConverged(n);
                 const r = () => (merge ? (sel() ? 11 : 9) : sel() ? 9 : 7);
+                const hovd = () => tip()?.n.id === n.id;
                 return (
-                  <g transform={`translate(${nx(n)},${ny(n)})`} style={{ cursor: 'pointer' }} onClick={() => props.onSelect(n.id)}>
-                    <Show when={merge}>
-                      <circle r={r() + 4} fill="none" stroke={color} stroke-width="1" opacity="0.4" />
+                  <g
+                    class="gg-node"
+                    transform={`translate(${nx(n)},${ny(n)})`}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => props.onSelect(n.id)}
+                    onMouseEnter={(e) => { setTip({ x: e.clientX, y: e.clientY, n }); props.onHover(n.id); }}
+                    onMouseMove={(e) => setTip((t) => (t ? { ...t, x: e.clientX, y: e.clientY } : t))}
+                    onMouseLeave={() => { setTip(null); props.onHover(null); }}
+                  >
+                    <Show when={merge || hovd()}>
+                      <circle r={r() + 4} fill="none" stroke={color} stroke-width="1" opacity={hovd() ? 0.9 : 0.4} />
                     </Show>
                     <circle
                       r={r()}
                       fill={n.status === 'planned' ? '#0d1117' : color}
-                      stroke={color}
-                      stroke-width={sel() ? 3 : 1.6}
+                      stroke={hovd() ? '#f0f6fc' : color}
+                      stroke-width={sel() ? 3 : hovd() ? 2.4 : 1.6}
                       stroke-dasharray={n.status === 'planned' ? '3 2' : ''}
                     />
-                    <text x={0} y={merge ? -16 : -13} text-anchor="middle" fill={sel() ? '#f0f6fc' : '#adbac7'} font-size="9" font-family="monospace">
+                    <text x={0} y={merge ? -16 : -13} text-anchor="middle" fill={sel() || hovd() ? '#f0f6fc' : '#adbac7'} font-size="9" font-family="monospace">
                       {n.ref ?? shortTitle(n.title)}
                     </text>
                     <text x={0} y={merge ? 22 : 20} text-anchor="middle" fill={merge ? color : '#6e7681'} font-size="8" font-family="monospace">
@@ -117,6 +129,23 @@ export function GitGraph(props: {
             </For>
           </svg>
         </div>
+      </Show>
+      <Show when={tip()}>
+        {(t) => (
+          <div class="gg-tip" style={{ left: `${t().x}px`, top: `${t().y - 14}px` }}>
+            <div class="gg-tip-title">{t().n.ref ? `${t().n.ref} · ` : ''}{t().n.title}</div>
+            <div class="gg-tip-meta">{t().n.kind} · {t().n.status}</div>
+            <div class="gg-tip-sum">{t().n.summary}</div>
+            <Show when={t().n.changedConcepts.length}>
+              <div class="gg-tip-row">
+                <b>{t().n.changedConcepts.length}</b> concept{t().n.changedConcepts.length === 1 ? '' : 's'}: {t().n.changedConcepts.map(props.conceptName).join(', ')}
+              </div>
+            </Show>
+            <Show when={t().n.changedPaths.length}>
+              <div class="gg-tip-row"><b>{t().n.changedPaths.length}</b> path{t().n.changedPaths.length === 1 ? '' : 's'} touched</div>
+            </Show>
+          </div>
+        )}
       </Show>
     </div>
   );
