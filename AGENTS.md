@@ -79,13 +79,16 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
 - **Concept⇢code canvas** — concepts as labelled container boxes (Perspective ⊃
   Link + SubjectClass …), elkjs compound layout, aggregated orthogonal wires at
   rest. **Click a concept to open its real code** (its `implementedBy` tree nests
-  inside it; click a dir to go deeper to files) and focus it (relations shown).
-  Progressive disclosure on ONE surface — high-level → file. Hover for a tooltip.
-  The landing shows the six top concepts collapsed; a node's sub-concepts + code
-  reveal on expand (children gated by the shared expand set).
+  inside it; click a dir to go deeper to files) and select it (relations shown).
+  The camera stays put on open/select — **double-click a node to frame it** (the
+  dedicated camera action; the toolbar `fit` button frames everything). Progressive
+  disclosure on ONE surface — high-level → file. Hover for a tooltip. The landing
+  shows the six top concepts collapsed; a node's sub-concepts + code reveal on
+  expand (children gated by the shared expand set).
 - **Hierarchy explorer** (right) — the concept→code tree, sharing the canvas's
   expand state 1-1: open/close a node here or on the canvas and the other follows;
-  selection stays in sync.
+  selection stays in sync, and **hovering a node or a row highlights its twin** in
+  the other panel.
 - **Threads** — pick one in the sidebar; its concept path lights green with a
   numbered, code-linked walkthrough.
 - **Change graph** (bottom panel) — the initiative's PRs + planned deltas as a DAG
@@ -109,6 +112,16 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
 - **Canvas load order.** `App` loads concepts + code + changes in parallel and
   sets concepts LAST, so `ConceptView` indexes the code model at mount. Concepts
   first races the canvas (empty code index → concepts won't open into code).
+- **Relation edges need both endpoints present.** `applySelect` / `applyThread`
+  add extra Cytoscape edges between concept nodes. A relation whose other end sits
+  inside a still-collapsed group has no node to attach to — adding an edge with a
+  missing source or target THROWS, and the throw aborts Solid's reactive flush, so
+  a later effect (e.g. `rebuild`) silently never runs (the symptom: clicking a
+  concept selects it but never opens). Always guard BOTH endpoints before `cy.add`.
+- **The camera is the user's.** Open/close/select never move the viewport;
+  `rebuild` preserves zoom+pan and counter-pans to hold the interacted node still.
+  Only double-click (frame a node), the `fit` button, and thread/overlay framing
+  move the camera.
 - **Change model is curated.** `changes.json` comes from a git/spec research pass
   (real PR file lists via `gh` + planned deltas from the `.specs`), not a live git
   read. A changed file lights a concept when it sits under one of that concept's

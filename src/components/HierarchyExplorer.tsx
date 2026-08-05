@@ -17,6 +17,8 @@ export function HierarchyExplorer(props: {
   toggleExpand: (id: string) => void;
   selected: () => string | null;
   setSelected: (v: string | null) => void;
+  hovered: () => string | null;
+  setHovered: (v: string | null) => void;
 }) {
   const conceptIds = new Set(props.model.concepts.map((c) => c.id));
   const subConcepts = new Map<string, Item[]>();
@@ -56,13 +58,16 @@ export function HierarchyExplorer(props: {
     const kids = () => childrenOf(p.item.id);
     const open = () => props.expanded().has(p.item.id);
     const sel = () => props.selected() === p.item.id;
+    const hov = () => props.hovered() === p.item.id;
     return (
       <>
         <div
           class="tree-row"
-          classList={{ sel: sel() }}
+          classList={{ sel: sel(), hov: hov() }}
           style={{ 'padding-left': `${6 + p.depth * 13}px` }}
           onClick={() => props.setSelected(p.item.id)}
+          onMouseEnter={() => props.setHovered(p.item.id)}
+          onMouseLeave={() => props.setHovered(null)}
         >
           <span
             class="tree-arrow"

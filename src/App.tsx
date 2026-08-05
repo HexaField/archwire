@@ -13,6 +13,7 @@ export function App() {
   const [cThr, setCThr] = createSignal<string | null>(null);
   const [changeSel, setChangeSel] = createSignal<string | null>(null);
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
+  const [hovered, setHovered] = createSignal<string | null>(null);
 
   async function loadJson<T>(urls: string[]): Promise<T | null> {
     for (const url of urls) {
@@ -270,6 +271,8 @@ export function App() {
               expanded={expanded}
               toggleExpand={toggleExpand}
               collapseAll={collapseAll}
+              hovered={hovered}
+              setHovered={setHovered}
             />
           )}
         </Show>
@@ -287,6 +290,8 @@ export function App() {
             toggleExpand={toggleExpand}
             selected={cSel}
             setSelected={(v) => { setChangeSel(null); setCSel(v); }}
+            hovered={hovered}
+            setHovered={setHovered}
           />
         )}
       </Show>

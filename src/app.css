@@ -383,6 +383,10 @@ code.path,
 .tree-row.sel {
   background: rgba(88, 166, 255, 0.14);
 }
+.tree-row.hov {
+  background: rgba(88, 166, 255, 0.1);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
 .tree-arrow {
   width: 16px;
   flex-shrink: 0;

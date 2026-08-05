@@ -101,6 +101,7 @@ const styles: unknown[] = [
     },
   },
   { selector: '.dim', style: { opacity: 0.05, 'text-opacity': 0.06 } },
+  { selector: 'node.hov', style: { opacity: 1, 'text-opacity': 1, 'overlay-color': '#58a6ff', 'overlay-opacity': 0.28, 'overlay-padding': 3 } },
   { selector: 'node.sel', style: { 'border-color': '#e3b341', 'border-width': 3 } },
   {
     selector: 'edge.sel-rel',
@@ -136,11 +137,13 @@ export function ConceptView(props: {
   expanded: () => Set<string>;
   toggleExpand: (id: string) => void;
   collapseAll: () => void;
+  hovered: () => string | null;
+  setHovered: (v: string | null) => void;
 }) {
   let container: HTMLDivElement | undefined;
   let tip: HTMLDivElement | undefined;
   let cy: cytoscape.Core | undefined;
-  let hovered = false;
+  let tipOn = false;
 
   const byId = new Map(props.model.concepts.map((c) => [c.id, c]));
   const threadById = new Map(props.model.threads.map((t) => [t.id, t]));
@@ -273,14 +276,23 @@ export function ConceptView(props: {
 
   async function rebuild() {
     if (!cy) return;
+    // keep the user's camera put; only counter-pan so the interacted (selected)
+    // node holds the same screen point while its subtree grows or shrinks.
+    const anchorId = props.selected();
+    const before = anchorId ? cy.getElementById(anchorId) : undefined;
+    const rpBefore = before && before.nonempty() ? { ...before.renderedPosition() } : null;
+    const zoom = cy.zoom();
+    const pan = { ...cy.pan() };
     cy.elements().remove();
     cy.add(computeElements());
     await layout();
     if (!cy) return;
-    const sel = props.selected();
-    const n = sel ? cy.getElementById(sel) : undefined;
-    if (n && n.nonempty()) cy.animate({ fit: { eles: n.closedNeighborhood().union(n.descendants()), padding: 55 }, duration: 220 });
-    else cy.fit(undefined, 38);
+    cy.viewport({ zoom, pan });
+    const after = anchorId ? cy.getElementById(anchorId) : undefined;
+    if (rpBefore && after && after.nonempty()) {
+      const rpAfter = after.renderedPosition();
+      cy.panBy({ x: rpBefore.x - rpAfter.x, y: rpBefore.y - rpAfter.y });
+    }
     reapply();
   }
 
@@ -302,11 +314,16 @@ export function ConceptView(props: {
     if (!byId.has(id)) return; // code node: spotlight only
     let idx = 0;
     const link = (a: string, b: string, label: string) => {
+      // both endpoints must be on the canvas — a relation whose other end sits
+      // inside a still-collapsed group has no node to attach to. Adding an edge
+      // with a missing source/target throws and aborts the render.
+      const an = cy?.getElementById(a);
       const bn = cy?.getElementById(b);
-      if (!bn || bn.empty()) return;
+      if (!an || an.empty() || !bn || bn.empty()) return;
+      an.removeClass('dim');
+      an.ancestors().removeClass('dim');
       bn.removeClass('dim');
       bn.ancestors().removeClass('dim');
-      cy?.getElementById(a).removeClass('dim');
       cy?.add({ group: 'edges', data: { id: `__sel${idx++}`, source: a, target: b, label }, classes: '__sel sel-rel' } as cytoscape.ElementDefinition);
     };
     byId.get(id)?.relations.filter((r) => byId.has(r.to)).forEach((r) => link(id, r.to, r.label));
@@ -385,13 +402,34 @@ export function ConceptView(props: {
     cy.add(computeElements());
     void layout().then(() => cy?.fit(undefined, 38));
 
+    // single tap = select + open/close, snappy and with the camera left alone;
+    // double tap = frame it (the dedicated camera action).
+    const focusNode = (n: cytoscape.NodeCollection) =>
+      cy?.animate({ fit: { eles: n.closedNeighborhood().union(n.descendants()), padding: 55 }, duration: 240 });
+    let lastTapId: string | null = null;
+    let lastTapAt = 0;
     cy.on('tap', 'node', (ev) => {
-      const id = (ev.target as cytoscape.NodeSingular).id();
+      const node = ev.target as cytoscape.NodeSingular;
+      const id = node.id();
+      const now = performance.now();
+      // a second tap inside the window = double-click → frame the FIRST tapped
+      // node; the first tap's expand may have shifted what sits under the cursor.
+      const dblOf = now - lastTapAt < 320 ? lastTapId : null;
+      lastTapId = id;
+      lastTapAt = now;
+      if (dblOf) {
+        const target = cy?.getElementById(dblOf);
+        if (target && target.nonempty()) {
+          props.setSelected(dblOf);
+          focusNode(target);
+        }
+        return;
+      }
       if (byId.has(id)) {
         props.setThread(null);
         props.setSelected(id);
         if (hasChildren(id)) props.toggleExpand(id);
-      } else if (ev.target.hasClass('codedir')) {
+      } else if (node.hasClass('codedir')) {
         props.setSelected(id);
         props.toggleExpand(id);
       } else {
@@ -400,19 +438,22 @@ export function ConceptView(props: {
     });
     cy.on('tap', (ev) => {
       if (ev.target === cy) {
+        if (performance.now() - lastTapAt < 320) return; // tail of a double-click
         props.setSelected(null);
         props.setThread(null);
       }
     });
     cy.on('mouseover', 'node', (ev) => {
-      hovered = true;
+      tipOn = true;
+      props.setHovered((ev.target as cytoscape.NodeSingular).id());
       showTip(ev.target as cytoscape.NodeSingular, ev.renderedPosition);
     });
     cy.on('mousemove', (ev) => {
-      if (hovered) moveTip(ev.renderedPosition);
+      if (tipOn) moveTip(ev.renderedPosition);
     });
     cy.on('mouseout', 'node', () => {
-      hovered = false;
+      tipOn = false;
+      props.setHovered(null);
       hideTip();
     });
 
@@ -420,6 +461,17 @@ export function ConceptView(props: {
     createEffect(on(props.selected, () => { if (!props.overlay() && !props.thread()) applySelect(); }, { defer: true }));
     createEffect(on(props.thread, () => applyThread(), { defer: true }));
     createEffect(on(props.overlay, () => applyOverlay(), { defer: true }));
+    // mirror the hovered node from the tree (and self) onto the canvas
+    createEffect(
+      on(props.hovered, (h) => {
+        if (!cy) return;
+        cy.nodes('.hov').removeClass('hov');
+        if (h) {
+          const n = cy.getElementById(h);
+          if (n.nonempty()) n.addClass('hov');
+        }
+      }),
+    );
   });
   onCleanup(() => cy?.destroy());
 
@@ -428,7 +480,7 @@ export function ConceptView(props: {
       <div class="canvas-toolbar">
         <button onClick={() => cy?.fit(undefined, 38)} title="fit to view">⤢ fit</button>
         <button onClick={() => props.collapseAll()} title="collapse everything">▤ collapse</button>
-        <span class="hint">click a concept to open its code · again to close</span>
+        <span class="hint">click to open · again to close · double-click to focus</span>
       </div>
       <div ref={container} class="cy" />
       <div id="tip" ref={tip}>
