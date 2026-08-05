@@ -94,8 +94,9 @@ const styles: unknown[] = [
       width: 1.6,
       'line-color': '#4a5a70',
       'curve-style': 'straight',
-      'target-arrow-shape': 'triangle',
+      // arrow SHAPES are set per-edge in layout() from the real relation directions
       'target-arrow-color': '#4a5a70',
+      'source-arrow-color': '#4a5a70',
       'arrow-scale': 0.85,
       opacity: 0.5,
     },
@@ -183,6 +184,7 @@ export function ConceptView(props: {
   // line, so the rest view shows "these relate", not two crossing arrows.
   const aggEdges: { id: string; source: string; target: string }[] = [];
   const aggLabelSet = new Map<string, string[]>();
+  const aggDirs = new Map<string, Set<string>>(); // edge id → set of "x>y" directed relations
   {
     const seen = new Set<string>();
     for (const c of props.model.concepts) {
@@ -193,11 +195,14 @@ export function ConceptView(props: {
         if (a === b) continue;
         const k = a < b ? `${a}~${b}` : `${b}~${a}`;
         const eid = `agg__${k}`;
-        // gather every relation label for the pair (both directions) → one wire,
-        // one combined label, so bidirectional labels never stack.
+        // gather every relation label + direction for the pair → one wire, a
+        // combined label, and an arrowhead per direction that actually exists.
         const labels = aggLabelSet.get(eid) ?? [];
         if (r.label && !labels.includes(r.label)) labels.push(r.label);
         aggLabelSet.set(eid, labels);
+        const dirs = aggDirs.get(eid) ?? new Set<string>();
+        dirs.add(`${a}>${b}`);
+        aggDirs.set(eid, dirs);
         if (seen.has(k)) continue;
         seen.add(k);
         // orient source = higher-layer (top) node so ports spread top→bottom
@@ -209,6 +214,12 @@ export function ConceptView(props: {
     }
   }
   const aggLabel = new Map([...aggLabelSet].map(([id, arr]) => [id, arr.join(' / ')]));
+  // arrowheads reflect the relations that actually exist: both ends for a
+  // bidirectional pair, one end (the real direction) for a one-way pair.
+  const edgeArrows = (eid: string, src: string, tgt: string) => ({
+    'target-arrow-shape': aggDirs.get(eid)?.has(`${src}>${tgt}`) ? 'triangle' : 'none',
+    'source-arrow-shape': aggDirs.get(eid)?.has(`${tgt}>${src}`) ? 'triangle' : 'none',
+  });
 
   // vertical axis = abstraction layer. Partition top concepts into rows by their
   // semantic `layer`; foundational (lowest layer) sits at the bottom.
@@ -332,6 +343,11 @@ export function ConceptView(props: {
       ids.sort((a, b) => cx(aggById.get(a)!.source) - cx(aggById.get(b)!.source));
       ids.forEach((id, i) => cy?.getElementById(id).style('target-endpoint', `${port(ids.length, i)}% -50%`));
     });
+    // arrowheads per real direction — both ends for bidirectional pairs
+    for (const e of aggEdges) {
+      const ce = cy?.getElementById(e.id);
+      if (ce && ce.nonempty()) ce.style(edgeArrows(e.id, e.source, e.target));
+    }
   }
 
   async function rebuild() {
@@ -352,7 +368,7 @@ export function ConceptView(props: {
     cy?.edges('.__te').remove(); // thread edges are the only ones we add
     cy?.elements().removeClass('dim sel sel-rel thread-step thread changed');
     cy?.edges().removeData('label'); // drop the labels put on highlighted wires
-    cy?.edges().removeStyle('source-arrow-shape target-arrow-shape'); // revert arrows
+    // arrow shapes stay (set in layout from real directions); .sel-rel recolours only
   }
   function applySelect() {
     if (!cy) return;
@@ -380,12 +396,7 @@ export function ConceptView(props: {
       // end, else the pair's first relation. Short labels don't overlap neighbours.
       const rel = byId.get(topId)?.relations.find((r) => topOf(r.to) === otherId);
       e.data('label', rel?.label ?? (aggLabel.get(e.id()) ?? '').split(' / ')[0]);
-      // point the arrow along the relation: at the neighbour for an outgoing
-      // relation, back at the selected concept for an incoming one.
-      const arrowTo = rel ? otherId : topId;
-      e.style(arrowTo === t
-        ? { 'target-arrow-shape': 'triangle', 'source-arrow-shape': 'none' }
-        : { 'source-arrow-shape': 'triangle', 'target-arrow-shape': 'none' });
+      // arrows already reflect the true direction(s); .sel-rel just recolours them
       e.removeClass('dim').addClass('sel-rel');
       other.removeClass('dim');
       other.ancestors().removeClass('dim');
