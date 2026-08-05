@@ -90,12 +90,14 @@ const styles: unknown[] = [
     style: {
       width: 1.3,
       'line-color': '#3d4b5f',
-      'curve-style': 'taxi',
-      'taxi-direction': 'auto',
-      'taxi-turn': '50%',
-      'taxi-turn-min-distance': 10,
+      // routes come from elk (channel-separated); per-edge segment-weights /
+      // -distances get applied in layout(). round-segments softens the corners.
+      'curve-style': 'round-segments',
+      'radius-type': 'arc-radius',
+      'segment-radii': 7,
+      'edge-distances': 'node-position', // segment weights/distances are vs node centers
       'target-arrow-shape': 'none',
-      opacity: 0.4,
+      opacity: 0.42,
     },
   },
   { selector: '.dim', style: { opacity: 0.05, 'text-opacity': 0.06 } },
@@ -104,8 +106,14 @@ const styles: unknown[] = [
   {
     selector: 'edge.sel-rel',
     style: {
+      // transient highlight edges keep the lighter taxi routing (no elk pass)
+      'curve-style': 'taxi',
+      'taxi-direction': 'auto',
+      'taxi-turn': '45%',
       'line-color': '#e3b341',
+      'target-arrow-shape': 'triangle',
       'target-arrow-color': '#e3b341',
+      'arrow-scale': 0.9,
       opacity: 0.95,
       width: 1.8,
       label: 'data(label)',
@@ -119,7 +127,7 @@ const styles: unknown[] = [
     },
   },
   { selector: 'node.thread-step', style: { 'background-color': '#238636', 'border-color': '#3fb950', 'border-width': 2.5, color: '#f0f6fc', 'z-index': 21 } },
-  { selector: 'edge.thread', style: { 'line-color': '#3fb950', 'target-arrow-color': '#3fb950', width: 2.6, opacity: 0.95, 'z-index': 22 } },
+  { selector: 'edge.thread', style: { 'curve-style': 'taxi', 'taxi-direction': 'auto', 'line-color': '#3fb950', 'target-arrow-shape': 'triangle', 'target-arrow-color': '#3fb950', 'arrow-scale': 0.9, width: 2.6, opacity: 0.95, 'z-index': 22 } },
   { selector: 'node.changed', style: { 'border-color': '#d29922', 'border-width': 3, 'z-index': 15 } },
   { selector: 'node.codefile.changed', style: { 'background-color': '#3a2d10', color: '#e3b341', 'border-color': '#d29922' } },
 ];
@@ -293,6 +301,35 @@ export function ConceptView(props: {
       const n = cy?.getElementById(id);
       if (n && n.nonempty() && n.isChildless()) n.position({ x: p.x + p.w / 2, y: p.y + p.h / 2 });
     });
+
+    // apply elk's channel-separated orthogonal routes to the cross-layer edges:
+    // each bend point → a cytoscape (segment-weight, segment-distance) pair,
+    // projected onto the source→target axis so the exact polyline reproduces.
+    // Same-layer edges never went to elk, so they keep the base straight line.
+    const c = cy;
+    const R = 7;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const e of (res.edges ?? []) as any[]) {
+      const ce = c.getElementById(e.id);
+      if (ce.empty()) continue;
+      const bends: { x: number; y: number }[] = e.sections?.[0]?.bendPoints ?? [];
+      if (!bends.length) {
+        ce.removeStyle('segment-weights segment-distances segment-radii');
+        continue;
+      }
+      const s = ce.source().position();
+      const t = ce.target().position();
+      const dx = t.x - s.x;
+      const dy = t.y - s.y;
+      const len2 = dx * dx + dy * dy;
+      if (len2 === 0) continue;
+      const len = Math.sqrt(len2);
+      // weight = projection along the center→center axis; distance = perpendicular
+      // offset using cytoscape's own normal ((-dy, dx)/len) so the point reproduces.
+      const weights = bends.map((p) => ((p.x - s.x) * dx + (p.y - s.y) * dy) / len2);
+      const dists = bends.map((p) => ((p.y - s.y) * dx - (p.x - s.x) * dy) / len);
+      ce.style({ 'segment-weights': weights, 'segment-distances': dists, 'segment-radii': bends.map(() => R) });
+    }
   }
 
   async function rebuild() {

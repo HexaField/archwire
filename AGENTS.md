@@ -133,6 +133,16 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
   layering, so same-layer concepts share one row; every relation still renders,
   deduped to one undirected wire per pair with no at-rest arrowheads. Change a
   concept's `layer` and its row moves — position is never arbitrary.
+- **Edges use elk's routes, not cytoscape's.** elk computes channel-separated
+  ORTHOGONAL routes (bend points) so parallel wires run in their own lanes instead
+  of through each other. `layout()` reads `res.edges[].sections[0].bendPoints` and
+  projects each onto the source→target axis into cytoscape `segment-weights` /
+  `segment-distances` (curve-style `round-segments` → soft corners). Two
+  non-obvious requirements, both verified against the cytoscape source: set
+  `edge-distances: node-position` so the projection reference is node CENTERS, and
+  use cytoscape's own normal `(-dy, dx)/len` for the distance sign (get it wrong
+  and the routes come out as wandering curves). Same-layer edges (no elk route)
+  fall back to a straight line; transient selection / thread edges keep `taxi`.
 - **The camera is the user's.** Open/close/select never move the viewport —
   `rebuild` snapshots zoom+pan and restores them *exactly* after the elk re-layout
   (no counter-pan, no fit), so the interacted node opens in place while unrelated
