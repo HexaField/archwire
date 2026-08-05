@@ -133,20 +133,20 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
   layering, so same-layer concepts share one row; every relation still renders,
   deduped to one undirected wire per pair with no at-rest arrowheads. Change a
   concept's `layer` and its row moves — position is never arbitrary.
-- **Edges are ONE cytoscape system: `round-taxi`.** Every wire — at-rest
-  aggregated relations AND transient selection / thread edges — uses the same
-  smooth-orthogonal `round-taxi` curve-style (`taxi-radius` rounds the corners), so
-  they look identical and follow node moves natively (cytoscape re-routes on any
-  position change). We do NOT reproduce elk's edge routes: an earlier version
-  projected them into `segments` (skewed stubs) then drew them on a static SVG
-  overlay (broke on drag, looked different from selection edges) — both removed for
-  this one simple path. elk still receives the cross-layer edges for node ordering
-  / crossing-minimisation, but its edge *routes* go unused. round-taxi is per-edge
-  (no channel separation), so wires sharing a corridor would stack their horizontal
-  jogs at one height and overlap (the K2,2 crossing between the top two rows and the
-  next). `edgeTurn` fixes this: grouped by layer-gap, each cross-layer wire gets a
-  distinct `taxi-turn` height (applied in `layout()`, with `taxi-direction: vertical`)
-  so corridor-sharing pairs cross at a point instead of running together.
+- **Edges: straight cytoscape wires between spread ports.** Every wire (at-rest
+  relations, selection, thread) is `curve-style: straight`, so they look identical
+  and follow node moves. cytoscape can't channel-separate ORTHOGONAL edges — we
+  tried and dropped, in order: reproducing elk's routes via `segments` (skewed
+  stubs), a static SVG overlay of elk's routes (broke on drag, differed from
+  selection edges), and `round-taxi` + per-edge `taxi-turn` stagger + ports (the
+  router tangled the offset endpoints). Straight wins because with spread ports it's
+  clean. `layout()` spreads each node's connection points: cross-layer wires leave
+  the source's BOTTOM and enter the target's TOP at offset x-positions
+  (`source-endpoint` / `target-endpoint`, ordered by the other end's x to keep the
+  fan crossing-free), so lines cross at a point instead of piling onto one
+  node-centre stub or sharing a corridor. Same-layer wires stay centre-to-centre.
+  elk still lays out the nodes; its edge routes go unused. (True orthogonal channels
+  would need elk routing + locked node positions — a heavier, non-drag path.)
 - **The camera is the user's.** Open/close/select never move the viewport —
   `rebuild` snapshots zoom+pan and restores them *exactly* after the elk re-layout
   (no counter-pan, no fit), so the interacted node opens in place while unrelated

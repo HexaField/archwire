@@ -85,19 +85,17 @@ const styles: unknown[] = [
       padding: 5,
     },
   },
-  // one edge system: smooth-orthogonal (round-taxi) for every wire, so at-rest and
-  // selected relations look the same and follow node moves.
+  // one edge system: straight wires between spread connection points (ports), so
+  // relations fan out and cross at a point instead of overlapping. Same style for
+  // at-rest + selected, and it follows node moves.
   {
     selector: 'edge',
     style: {
-      width: 1.4,
-      'line-color': '#3d4b5f',
-      'curve-style': 'round-taxi',
-      'taxi-direction': 'auto',
-      'taxi-turn': '50%',
-      'taxi-radius': 8,
+      width: 1.6,
+      'line-color': '#4a5a70',
+      'curve-style': 'straight',
       'target-arrow-shape': 'none',
-      opacity: 0.4,
+      opacity: 0.5,
     },
   },
   { selector: '.dim', style: { opacity: 0.05, 'text-opacity': 0.06 } },
@@ -106,10 +104,7 @@ const styles: unknown[] = [
   {
     selector: 'edge.sel-rel',
     style: {
-      'curve-style': 'round-taxi',
-      'taxi-direction': 'auto',
-      'taxi-turn': '50%',
-      'taxi-radius': 8,
+      'curve-style': 'straight',
       'line-color': '#e3b341',
       'target-arrow-shape': 'triangle',
       'target-arrow-color': '#e3b341',
@@ -127,7 +122,7 @@ const styles: unknown[] = [
     },
   },
   { selector: 'node.thread-step', style: { 'background-color': '#238636', 'border-color': '#3fb950', 'border-width': 2.5, color: '#f0f6fc', 'z-index': 21 } },
-  { selector: 'edge.thread', style: { 'curve-style': 'round-taxi', 'taxi-direction': 'auto', 'taxi-radius': 8, 'line-color': '#3fb950', 'target-arrow-shape': 'triangle', 'target-arrow-color': '#3fb950', 'arrow-scale': 0.9, width: 2.6, opacity: 0.95, 'z-index': 22 } },
+  { selector: 'edge.thread', style: { 'curve-style': 'straight', 'line-color': '#3fb950', 'target-arrow-shape': 'triangle', 'target-arrow-color': '#3fb950', 'arrow-scale': 0.9, width: 2.6, opacity: 0.95, 'z-index': 22 } },
   { selector: 'node.changed', style: { 'border-color': '#d29922', 'border-width': 3, 'z-index': 15 } },
   { selector: 'node.codefile.changed', style: { 'background-color': '#3a2d10', color: '#e3b341', 'border-color': '#d29922' } },
 ];
@@ -196,7 +191,12 @@ export function ConceptView(props: {
         const k = a < b ? `${a}~${b}` : `${b}~${a}`;
         if (seen.has(k)) continue;
         seen.add(k);
-        aggEdges.push({ id: `agg__${k}`, source: a, target: b });
+        // orient source = higher-layer (top) node so the taxi-turn stagger measures
+        // every wire's jog from a consistent top reference (else jogs collide)
+        const la = byId.get(a)?.layer ?? 0;
+        const lb = byId.get(b)?.layer ?? 0;
+        const [src, tgt] = la >= lb ? [a, b] : [b, a];
+        aggEdges.push({ id: `agg__${k}`, source: src, target: tgt });
       }
     }
   }
@@ -211,26 +211,7 @@ export function ConceptView(props: {
     return layerVals.length - 1 - (layerRank.get(l) ?? 0);
   };
 
-  // Cross-layer wires between the same two rows share a corridor; round-taxi would
-  // stack their horizontal jogs at one height and overlap them (the K2,2 crossing).
-  // Give each a distinct turn height so they separate and cross cleanly at a point.
-  const edgeTurn = new Map<string, string>();
-  {
-    const groups = new Map<string, string[]>();
-    for (const e of aggEdges) {
-      const ls = byId.get(e.source)?.layer ?? 0;
-      const lt = byId.get(e.target)?.layer ?? 0;
-      if (ls === lt) continue; // same-row wires stay horizontal, no stagger
-      const k = ls < lt ? `${ls}-${lt}` : `${lt}-${ls}`;
-      const arr = groups.get(k) ?? [];
-      arr.push(e.id);
-      groups.set(k, arr);
-    }
-    for (const ids of groups.values()) {
-      const n = ids.length;
-      ids.forEach((id, i) => edgeTurn.set(id, `${n === 1 ? 50 : Math.round(28 + (i * 44) / (n - 1))}%`));
-    }
-  }
+  const aggById = new Map(aggEdges.map((e) => [e.id, e]));
 
   function computeElements(): cytoscape.ElementDefinition[] {
     const exp = props.expanded();
@@ -322,11 +303,25 @@ export function ConceptView(props: {
       const n = cy?.getElementById(id);
       if (n && n.nonempty() && n.isChildless()) n.position({ x: p.x + p.w / 2, y: p.y + p.h / 2 });
     });
-    // route cross-layer wires vertical-first and stagger the turn so corridor-
-    // sharing pairs (e.g. runtime↔perspective vs neighbourhood↔language) separate
-    edgeTurn.forEach((turn, id) => {
-      const ce = cy?.getElementById(id);
-      if (ce && ce.nonempty()) ce.style({ 'taxi-direction': 'vertical', 'taxi-turn': turn });
+    // spread each node's connection points (ports) so wires sharing a node don't
+    // overlap on the entry / exit stub. Sources exit the bottom, targets the top;
+    // order them by the other end's x to keep the fan crossing-free.
+    const cx = (id: string) => cy?.getElementById(id).position().x ?? 0;
+    const outs = new Map<string, string[]>();
+    const ins = new Map<string, string[]>();
+    for (const e of aggEdges) {
+      if (partitionOf(e.source) === partitionOf(e.target)) continue;
+      (outs.get(e.source) ?? outs.set(e.source, []).get(e.source)!).push(e.id);
+      (ins.get(e.target) ?? ins.set(e.target, []).get(e.target)!).push(e.id);
+    }
+    const port = (n: number, i: number) => (n <= 1 ? 0 : Math.round((-0.5 + i / (n - 1)) * 80));
+    outs.forEach((ids) => {
+      ids.sort((a, b) => cx(aggById.get(a)!.target) - cx(aggById.get(b)!.target));
+      ids.forEach((id, i) => cy?.getElementById(id).style('source-endpoint', `${port(ids.length, i)}% 50%`));
+    });
+    ins.forEach((ids) => {
+      ids.sort((a, b) => cx(aggById.get(a)!.source) - cx(aggById.get(b)!.source));
+      ids.forEach((id, i) => cy?.getElementById(id).style('target-endpoint', `${port(ids.length, i)}% -50%`));
     });
   }
 
