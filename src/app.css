@@ -384,11 +384,19 @@ code.path,
   background: rgba(88, 166, 255, 0.14);
 }
 .tree-arrow {
-  width: 10px;
+  width: 16px;
   flex-shrink: 0;
   color: var(--text-dim);
-  font-size: 8px;
+  font-size: 11px;
+  line-height: 1;
   text-align: center;
+  cursor: pointer;
+}
+.tree-arrow:hover {
+  color: var(--accent);
+}
+.tree-arrow.leaf {
+  cursor: default;
 }
 .tree-label.concept {
   color: #adbac7;

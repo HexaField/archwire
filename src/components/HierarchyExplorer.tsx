@@ -62,12 +62,19 @@ export function HierarchyExplorer(props: {
           class="tree-row"
           classList={{ sel: sel() }}
           style={{ 'padding-left': `${6 + p.depth * 13}px` }}
-          onClick={() => {
-            props.setSelected(p.item.id);
-            if (kids().length) props.toggleExpand(p.item.id);
-          }}
+          onClick={() => props.setSelected(p.item.id)}
         >
-          <span class="tree-arrow">{kids().length ? (open() ? '▾' : '▸') : '·'}</span>
+          <span
+            class="tree-arrow"
+            classList={{ leaf: !kids().length }}
+            onClick={(e) => {
+              if (!kids().length) return;
+              e.stopPropagation();
+              props.toggleExpand(p.item.id);
+            }}
+          >
+            {kids().length ? (open() ? '▾' : '▸') : ''}
+          </span>
           <span class={`tree-label ${p.item.kind}${p.item.pillar ? ' pillar' : ''}`}>{p.item.label}</span>
         </div>
         <Show when={open()}>
