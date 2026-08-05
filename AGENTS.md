@@ -122,10 +122,13 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
   missing source or target THROWS, and the throw aborts Solid's reactive flush, so
   a later effect (e.g. `rebuild`) silently never runs (the symptom: clicking a
   concept selects it but never opens). Always guard BOTH endpoints before `cy.add`.
-- **The camera is the user's.** Open/close/select never move the viewport;
-  `rebuild` preserves zoom+pan and counter-pans to hold the interacted node still.
-  Only double-click (frame a node), the `fit` button, and thread framing move the
-  camera — change hover/click/reveal do not.
+- **The camera is the user's.** Open/close/select never move the viewport —
+  `rebuild` snapshots zoom+pan and restores them *exactly* after the elk re-layout
+  (no counter-pan, no fit), so the interacted node opens in place while unrelated
+  nodes may re-flow around it. Only double-click (frame a node), the `fit` button,
+  and thread framing move the camera; change hover/click/reveal do not. Note: elk
+  re-lays-out the whole compound graph on every open/close, so a truly stable
+  layout (persisted positions) remains a separate, larger change.
 - **History is coalesced.** Undo/redo snapshots `{selection, thread, change,
   expanded}`. A single interaction fires several signal writes, so the recorder
   debounces through a microtask — one click = one undo step. Applying a snapshot

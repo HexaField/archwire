@@ -276,11 +276,8 @@ export function ConceptView(props: {
 
   async function rebuild() {
     if (!cy) return;
-    // keep the user's camera put; only counter-pan so the interacted (selected)
-    // node holds the same screen point while its subtree grows or shrinks.
-    const anchorId = props.selected();
-    const before = anchorId ? cy.getElementById(anchorId) : undefined;
-    const rpBefore = before && before.nonempty() ? { ...before.renderedPosition() } : null;
+    // the camera is the user's — hold zoom AND pan exactly across a re-layout so
+    // opening/closing a node never moves the viewport. Nothing here touches it.
     const zoom = cy.zoom();
     const pan = { ...cy.pan() };
     cy.elements().remove();
@@ -288,11 +285,6 @@ export function ConceptView(props: {
     await layout();
     if (!cy) return;
     cy.viewport({ zoom, pan });
-    const after = anchorId ? cy.getElementById(anchorId) : undefined;
-    if (rpBefore && after && after.nonempty()) {
-      const rpAfter = after.renderedPosition();
-      cy.panBy({ x: rpBefore.x - rpAfter.x, y: rpBefore.y - rpAfter.y });
-    }
     reapply();
   }
 
