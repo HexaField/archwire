@@ -562,19 +562,20 @@ code.path,
 }
 .axis {
   position: absolute;
-  z-index: 2;
+  z-index: 4;
+  left: 14px;
   color: var(--text-dim);
   font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   pointer-events: none;
-  opacity: 0.6;
+  opacity: 0.75;
 }
 .axis-y-top {
-  top: 10px;
-  left: 12px;
+  top: 54px;
 }
 .axis-y-bot {
-  bottom: 10px;
-  left: 12px;
+  bottom: 14px;
 }
 
 /* ── structural graph (in #main) ─────────────────────── */

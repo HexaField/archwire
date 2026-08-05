@@ -79,8 +79,10 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
 ## The canvas + change axis
 
 - **Concept⇢code canvas** — concepts as labelled container boxes (Perspective ⊃
-  Link + SubjectClass …), elkjs compound layout, aggregated orthogonal wires at
-  rest. **Click a node to select it** (relations + sidebar detail); the canvas
+  Link + SubjectClass …) laid out in **rows by abstraction `layer`** (elk
+  partitioning; foundational at the bottom, higher-level at the top — see the axis
+  labels), one **undirected** orthogonal wire per related pair at rest. **Click a
+  node to select it** (relations + sidebar detail); the canvas
   never opens/closes on click and never moves the camera. **Double-click frames**
   a node (the toolbar `fit` button frames everything). Open/close a concept from
   the **tree** (arrow icons / keyboard) — the canvas mirrors it 1-1, nesting the
@@ -125,6 +127,12 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
   missing source or target THROWS, and the throw aborts Solid's reactive flush, so
   a later effect (e.g. `rebuild`) silently never runs (the symptom: clicking a
   concept selects it but never opens). Always guard BOTH endpoints before `cy.add`.
+- **Layout = semantic layers, not edge topology.** Vertical position means
+  abstraction: rows come from each concept's `layer` via elk partitioning
+  (`partitionOf`, low layer → bottom). Only CROSS-layer relations feed elk's
+  layering, so same-layer concepts share one row; every relation still renders,
+  deduped to one undirected wire per pair with no at-rest arrowheads. Change a
+  concept's `layer` and its row moves — position is never arbitrary.
 - **The camera is the user's.** Open/close/select never move the viewport —
   `rebuild` snapshots zoom+pan and restores them *exactly* after the elk re-layout
   (no counter-pan, no fit), so the interacted node opens in place while unrelated

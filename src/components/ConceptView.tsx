@@ -1,4 +1,4 @@
-import { createEffect, on, onCleanup, onMount } from 'solid-js';
+import { createEffect, on, onCleanup, onMount, Show } from 'solid-js';
 import cytoscape from 'cytoscape';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import type { CodeNode, Concept, ConceptModel } from '../lib/concepts';
@@ -88,16 +88,14 @@ const styles: unknown[] = [
   {
     selector: 'edge',
     style: {
-      width: 1.4,
+      width: 1.3,
       'line-color': '#3d4b5f',
       'curve-style': 'taxi',
       'taxi-direction': 'auto',
       'taxi-turn': '50%',
-      'taxi-turn-min-distance': 12,
-      'target-arrow-shape': 'triangle',
-      'target-arrow-color': '#3d4b5f',
-      'arrow-scale': 0.8,
-      opacity: 0.5,
+      'taxi-turn-min-distance': 10,
+      'target-arrow-shape': 'none',
+      opacity: 0.4,
     },
   },
   { selector: '.dim', style: { opacity: 0.05, 'text-opacity': 0.06 } },
@@ -175,6 +173,9 @@ export function ConceptView(props: {
     while (c && c.parent) c = byId.get(c.parent);
     return c?.id ?? id;
   };
+  // one UNDIRECTED wire per related top-level pair — a relation and its inverse
+  // (runtime hosts language / language hosted by runtime) collapse to a single
+  // line, so the rest view shows "these relate", not two crossing arrows.
   const aggEdges: { id: string; source: string; target: string }[] = [];
   {
     const seen = new Set<string>();
@@ -184,13 +185,23 @@ export function ConceptView(props: {
         const a = topOf(c.id);
         const b = topOf(r.to);
         if (a === b) continue;
-        const k = `${a}>${b}`;
+        const k = a < b ? `${a}~${b}` : `${b}~${a}`;
         if (seen.has(k)) continue;
         seen.add(k);
-        aggEdges.push({ id: `agg__${a}__${b}`, source: a, target: b });
+        aggEdges.push({ id: `agg__${k}`, source: a, target: b });
       }
     }
   }
+
+  // vertical axis = abstraction layer. Partition top concepts into rows by their
+  // semantic `layer`; foundational (lowest layer) sits at the bottom.
+  const topConcepts = props.model.concepts.filter((c) => !c.parent);
+  const layerVals = [...new Set(topConcepts.map((c) => c.layer))].sort((x, y) => x - y);
+  const layerRank = new Map(layerVals.map((l, i) => [l, i]));
+  const partitionOf = (id: string) => {
+    const l = byId.get(id)?.layer ?? layerVals[0];
+    return layerVals.length - 1 - (layerRank.get(l) ?? 0);
+  };
 
   function computeElements(): cytoscape.ElementDefinition[] {
     const exp = props.expanded();
@@ -243,12 +254,28 @@ export function ConceptView(props: {
         'elk.direction': 'DOWN',
         'elk.edgeRouting': 'ORTHOGONAL',
         'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-        'elk.spacing.nodeNode': '32',
-        'elk.layered.spacing.nodeNodeBetweenLayers': '64',
-        'elk.spacing.edgeNode': '26',
+        // rows come from the semantic layer, not the edge topology
+        'elk.partitioning.activate': 'true',
+        'elk.spacing.nodeNode': '40',
+        'elk.layered.spacing.nodeNodeBetweenLayers': '96',
+        'elk.spacing.edgeNode': '24',
+        'elk.spacing.edgeEdge': '16',
+        'elk.layered.spacing.edgeEdgeBetweenLayers': '16',
+        'elk.layered.spacing.edgeNodeBetweenLayers': '30',
+        'elk.layered.mergeEdges': 'true',
+        'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+        'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
       },
-      children: roots.map((r) => elkTree(r, sizes)),
-      edges: aggEdges.map((e) => ({ id: e.id, sources: [e.source], targets: [e.target] })),
+      children: roots.map((r) => {
+        const t = elkTree(r, sizes);
+        t.layoutOptions = { ...(t.layoutOptions ?? {}), 'elk.partitioning.partition': String(partitionOf(r)) };
+        return t;
+      }),
+      // only cross-layer relations drive the layering — same-layer pairs then
+      // share a row (their wire still renders in cytoscape as a straight hop).
+      edges: aggEdges
+        .filter((e) => partitionOf(e.source) !== partitionOf(e.target))
+        .map((e) => ({ id: e.id, sources: [e.source], targets: [e.target] })),
     };
     const res = await elk.layout(graph);
     if (!cy) return;
@@ -465,6 +492,10 @@ export function ConceptView(props: {
         <span class="hint">click to select · double-click to focus · open / close in the tree →</span>
       </div>
       <div ref={container} class="cy" />
+      <Show when={layerVals.length > 1}>
+        <div class="axis axis-y-top">▲ higher-level</div>
+        <div class="axis axis-y-bot">▼ foundational</div>
+      </Show>
       <div id="tip" ref={tip}>
         <div class="tt" />
         <div class="td" />
