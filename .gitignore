@@ -1,0 +1,8 @@
+node_modules/
+dist/
+public/model.json
+public/concepts.json
+public/code.json
+public/changes.json
+*.log
+.DS_Store
