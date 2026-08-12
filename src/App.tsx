@@ -1,6 +1,7 @@
 import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from 'solid-js';
-import type { ChangeModel, CodeModel, CodeNode, ConceptModel } from './lib/concepts';
+import type { ChangeModel, CodeModel, CodeNode, ConceptModel, FlowModel, FlowStep } from './lib/concepts';
 import { ConceptView } from './components/ConceptView';
+import { FlowView } from './components/FlowView';
 import { GitGraph } from './components/GitGraph';
 import { HierarchyExplorer } from './components/HierarchyExplorer';
 
@@ -8,6 +9,7 @@ export function App() {
   const [concepts, setConcepts] = createSignal<ConceptModel | null>(null);
   const [code, setCode] = createSignal<CodeNode[]>([]);
   const [changes, setChanges] = createSignal<ChangeModel | null>(null);
+  const [flows, setFlows] = createSignal<FlowModel | null>(null);
   const [err, setErr] = createSignal<string | null>(null);
   const [cSel, setCSel] = createSignal<string | null>(null);
   const [cThr, setCThr] = createSignal<string | null>(null);
@@ -15,6 +17,13 @@ export function App() {
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
   const [hovered, setHovered] = createSignal<string | null>(null);
   const [hoverChange, setHoverChange] = createSignal<string | null>(null);
+
+  // flow view state
+  type ViewMode = 'concepts' | 'flows';
+  const [view, setView] = createSignal<ViewMode>('concepts');
+  const [activeFlows, setActiveFlows] = createSignal<Set<string>>(new Set());
+  const [activeDiff, setActiveDiff] = createSignal<string | null>(null);
+  const [flowStepSel, setFlowStepSel] = createSignal<string | null>(null);
 
   async function loadJson<T>(urls: string[]): Promise<T | null> {
     for (const url of urls) {
@@ -32,17 +41,24 @@ export function App() {
   }
 
   onMount(async () => {
-    // load all three together; set concepts LAST so the canvas mounts with the
+    // load all four together; set concepts LAST so the canvas mounts with the
     // code + change models already present (it indexes props.code once at init).
-    const [c, codeModel, ch] = await Promise.all([
+    const [c, codeModel, ch, fl] = await Promise.all([
       loadJson<ConceptModel>(['/concepts.json', '/concepts.sample.json']),
       loadJson<CodeModel>(['/code.json']),
       loadJson<ChangeModel>(['/changes.json']),
+      loadJson<FlowModel>(['/flows.json']),
     ]);
     if (codeModel) setCode(codeModel.nodes);
     if (ch) setChanges(ch);
+    if (fl) {
+      setFlows(fl);
+      // auto-activate all flows; auto-switch to flow view when no concept model
+      setActiveFlows(new Set(fl.flows.map((f) => f.id)));
+      if (!c) setView('flows');
+    }
     if (c) setConcepts(c);
-    if (!c) setErr('No concept model — provide public/concepts.json');
+    if (!c && !fl) setErr('No concept model or flow data — provide public/concepts.json or public/flows.json');
   });
 
   const cm = () => concepts();
@@ -203,6 +219,27 @@ export function App() {
   const laneName = (id: string) => changes()?.lanes.find((l) => l.id === id)?.name ?? id;
   const laneColor = (id: string) => changes()?.lanes.find((l) => l.id === id)?.color ?? '#8b949e';
 
+  // ── flow helpers ──
+  const toggleFlow = (flowId: string) =>
+    setActiveFlows((prev) => {
+      const next = new Set(prev);
+      if (next.has(flowId)) next.delete(flowId);
+      else next.add(flowId);
+      return next;
+    });
+  const selFlowStep = (): { flow: string; step: FlowStep } | undefined => {
+    const fid = flowStepSel();
+    if (!fid) return undefined;
+    // flowStepSel stores "flowId:stepId"
+    const fm = flows();
+    if (!fm) return undefined;
+    for (const f of fm.flows) {
+      const s = f.steps.find((st) => `${f.id}:${st.id}` === fid);
+      if (s) return { flow: f.id, step: s };
+    }
+    return undefined;
+  };
+
   return (
     <div class="app">
       <div id="sidebar">
@@ -214,46 +251,127 @@ export function App() {
           <button class="ctrl-btn" disabled={!canUndo()} onClick={undo} title="undo (Ctrl+Z)">↶ undo</button>
           <button class="ctrl-btn" disabled={!canRedo()} onClick={redo} title="redo (Ctrl+Shift+Z)">↷ redo</button>
           <button class="ctrl-btn" onClick={collapseAll} title="collapse everything">▤ collapse all</button>
+          <Show when={flows() && concepts()}>
+            <span class="ctrl-sep" />
+            <button class="ctrl-btn" classList={{ active: view() === 'concepts' }} onClick={() => setView('concepts')}>◈ concepts</button>
+            <button class="ctrl-btn" classList={{ active: view() === 'flows' }} onClick={() => setView('flows')}>⇢ flows</button>
+          </Show>
         </div>
 
         <div id="details">
-          <Show when={cm()} fallback={<div class="detail-row">{err() ?? 'loading…'}</div>}>
-            {(m) => (
-              <Switch
-                fallback={
-                  <>
-                    <h2>Overview</h2>
-                    <p class="panel-sum">{m().summary}</p>
-                    <div class="stat-grid">
-                      <div class="stat-card"><div class="stat-number">{m().concepts.length}</div><div class="stat-label">concepts</div></div>
-                      <div class="stat-card"><div class="stat-number">{m().concepts.filter((c) => c.pillar).length}</div><div class="stat-label">pillars</div></div>
-                      <div class="stat-card"><div class="stat-number">{m().threads.length}</div><div class="stat-label">threads</div></div>
-                      <div class="stat-card"><div class="stat-number">{changes()?.nodes.length ?? 0}</div><div class="stat-label">changes</div></div>
-                    </div>
-                    <h3>How to use</h3>
-                    <div class="detail-row"><span class="detail-label">Click</span> a node → select it + see relations</div>
-                    <div class="detail-row"><span class="detail-label">Tree →</span> open / close nodes (↑↓ ←→ ⏎)</div>
-                    <div class="detail-row"><span class="detail-label">Thread</span> → follow a flow across concepts</div>
-                    <div class="detail-row"><span class="detail-label">Change</span> → overlay a PR's impact on the map</div>
-                    <h3>Threads</h3>
-                    <For each={m().threads}>
-                      {(t) => (
-                        <div class="thread-item" onClick={() => { setCSel(null); setChangeSel(null); setCThr(t.id); }}>
-                          {t.name}
+          <Show when={cm() || flows()} fallback={<div class="detail-row">{err() ?? 'loading…'}</div>}>
+            <Switch
+              fallback={
+                <Switch fallback={<div class="detail-row">loading…</div>}>
+                  <Match when={view() === 'flows' && flows()}>
+                    {(fm) => (
+                      <>
+                        <h2>Flows</h2>
+                        <p class="panel-sum">Execution-path diagrams — toggle each flow on/off.</p>
+                        <h3>Active flows</h3>
+                        <For each={fm().flows}>
+                          {(f) => (
+                            <label class="flow-toggle">
+                              <input
+                                type="checkbox"
+                                checked={activeFlows().has(f.id)}
+                                onChange={() => toggleFlow(f.id)}
+                              />
+                              <span class="flow-toggle-name">{f.name}</span>
+                              <span class="flow-toggle-src">{f.source}</span>
+                            </label>
+                          )}
+                        </For>
+                        <Show when={fm().diffs.length}>
+                          <h3>Diff overlays</h3>
+                          <div class="flow-toggle">
+                            <label>
+                              <input type="radio" name="diff" checked={!activeDiff()} onChange={() => setActiveDiff(null)} />
+                              <span class="flow-toggle-name">none</span>
+                            </label>
+                          </div>
+                          <For each={[...new Set(fm().diffs.map((d) => d.diffSource))]}>
+                            {(src) => (
+                              <div class="flow-toggle">
+                                <label>
+                                  <input type="radio" name="diff" checked={activeDiff() === src} onChange={() => setActiveDiff(src)} />
+                                  <span class="flow-toggle-name">{src}</span>
+                                </label>
+                              </div>
+                            )}
+                          </For>
+                        </Show>
+                        <h3>How to use</h3>
+                        <div class="detail-row"><span class="detail-label">Toggle</span> flows on/off above</div>
+                        <div class="detail-row"><span class="detail-label">Click</span> a step → see detail + code refs</div>
+                        <div class="detail-row"><span class="detail-label">Double-click</span> → expand sub-steps or frame</div>
+                        <div class="detail-row"><span class="detail-label">Diff</span> → red removed, green added, amber modified</div>
+                      </>
+                    )}
+                  </Match>
+                  <Match when={cm()}>
+                    {(m) => (
+                      <>
+                        <h2>Overview</h2>
+                        <p class="panel-sum">{m().summary}</p>
+                        <div class="stat-grid">
+                          <div class="stat-card"><div class="stat-number">{m().concepts.length}</div><div class="stat-label">concepts</div></div>
+                          <div class="stat-card"><div class="stat-number">{m().concepts.filter((c) => c.pillar).length}</div><div class="stat-label">pillars</div></div>
+                          <div class="stat-card"><div class="stat-number">{m().threads.length}</div><div class="stat-label">threads</div></div>
+                          <div class="stat-card"><div class="stat-number">{changes()?.nodes.length ?? 0}</div><div class="stat-label">changes</div></div>
                         </div>
-                      )}
-                    </For>
-                    <Show when={changes()}>
-                      {(ch) => (
-                        <>
-                          <h3>{ch().initiative} — changes</h3>
-                          <p class="panel-sum small">{ch().summary}</p>
-                        </>
-                      )}
-                    </Show>
-                  </>
-                }
-              >
+                        <h3>How to use</h3>
+                        <div class="detail-row"><span class="detail-label">Click</span> a node → select it + see relations</div>
+                        <div class="detail-row"><span class="detail-label">Tree →</span> open / close nodes (↑↓ ←→ ⏎)</div>
+                        <div class="detail-row"><span class="detail-label">Thread</span> → follow a flow across concepts</div>
+                        <div class="detail-row"><span class="detail-label">Change</span> → overlay a PR's impact on the map</div>
+                        <h3>Threads</h3>
+                        <For each={m().threads}>
+                          {(t) => (
+                            <div class="thread-item" onClick={() => { setCSel(null); setChangeSel(null); setCThr(t.id); }}>
+                              {t.name}
+                            </div>
+                          )}
+                        </For>
+                        <Show when={changes()}>
+                          {(ch) => (
+                            <>
+                              <h3>{ch().initiative} — changes</h3>
+                              <p class="panel-sum small">{ch().summary}</p>
+                            </>
+                          )}
+                        </Show>
+                      </>
+                    )}
+                  </Match>
+                </Switch>
+              }
+            >
+                <Match when={selFlowStep()}>
+                  {(fs) => (
+                    <>
+                      <span class="back-link" onClick={() => setFlowStepSel(null)}>‹ flows</span>
+                      <h2>{fs().step.label}</h2>
+                      <div class="meta-line">{fs().step.kind}{fs().step.detail ? ` · ${fs().step.detail}` : ''}</div>
+                      <Show when={fs().step.codeRefs.length}>
+                        <h3>Code references</h3>
+                        <ul class="paths">
+                          <For each={fs().step.codeRefs}>
+                            {(r) => <li><code class="path">{r.path}{r.line ? `:${r.line}` : ''}</code></li>}
+                          </For>
+                        </ul>
+                      </Show>
+                      <Show when={fs().step.conceptIds?.length}>
+                        <h3>Linked concepts</h3>
+                        <ul class="chips">
+                          <For each={fs().step.conceptIds ?? []}>
+                            {(cid) => <li onClick={() => { setView('concepts'); setFlowStepSel(null); setCSel(cid); }}>{nameOf(cid)}</li>}
+                          </For>
+                        </ul>
+                      </Show>
+                    </>
+                  )}
+                </Match>
                 <Match when={selChangeNode()}>
                   {(ch) => (
                     <>
@@ -322,7 +440,6 @@ export function App() {
                   )}
                 </Match>
               </Switch>
-            )}
           </Show>
         </div>
 
@@ -335,25 +452,38 @@ export function App() {
 
       <div id="main">
         <div class="canvas-holder">
-        <Show when={cm()} fallback={<div class="empty">{err() ?? 'loading…'}</div>}>
-          {(m) => (
-            <ConceptView
-              model={m()}
-              code={code()}
-              selected={cSel}
-              setSelected={(v) => { setChangeSel(null); setCSel(v); }}
-              thread={cThr}
-              setThread={setCThr}
-              overlay={overlay}
-              expanded={expanded}
-              collapseAll={collapseAll}
-              hovered={hovered}
-              setHovered={setHovered}
-            />
-          )}
-        </Show>
+        <Switch fallback={<div class="empty">{err() ?? 'loading…'}</div>}>
+          <Match when={view() === 'concepts' && cm()}>
+            {(m) => (
+              <ConceptView
+                model={m()}
+                code={code()}
+                selected={cSel}
+                setSelected={(v) => { setChangeSel(null); setCSel(v); }}
+                thread={cThr}
+                setThread={setCThr}
+                overlay={overlay}
+                expanded={expanded}
+                collapseAll={collapseAll}
+                hovered={hovered}
+                setHovered={setHovered}
+              />
+            )}
+          </Match>
+          <Match when={view() === 'flows' && flows()}>
+            {(fm) => (
+              <FlowView
+                model={fm()}
+                activeFlows={activeFlows}
+                activeDiff={activeDiff}
+                selected={flowStepSel}
+                setSelected={setFlowStepSel}
+              />
+            )}
+          </Match>
+        </Switch>
         </div>
-        <Show when={changes()}>
+        <Show when={view() === 'concepts' && changes()}>
           {(ch) => (
             <GitGraph
               model={ch()}
@@ -365,7 +495,7 @@ export function App() {
           )}
         </Show>
       </div>
-      <Show when={cm()}>
+      <Show when={view() === 'concepts' && cm()}>
         {(m) => (
           <HierarchyExplorer
             model={m()}

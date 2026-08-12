@@ -4,5 +4,6 @@ public/model.json
 public/concepts.json
 public/code.json
 public/changes.json
+public/flows.json
 *.log
 .DS_Store

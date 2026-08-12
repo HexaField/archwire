@@ -83,3 +83,51 @@ export interface ChangeModel {
   lanes: ChangeLane[];
   nodes: ChangeNode[];
 }
+
+// ── flow model ──────────────────────────────────────────────────────────
+// Execution-path diagrams for user actions / system processes. Each flow
+// traces a path through code, optionally linked to concepts.
+
+export interface CodeRef {
+  path: string;    // repo-relative file path
+  line?: number;
+}
+
+export interface FlowStep {
+  id: string;
+  label: string;
+  detail?: string;
+  parentId?: string;         // progressive disclosure: expand to reveal sub-steps
+  codeRefs: CodeRef[];
+  conceptIds?: string[];     // links into the concept model
+  kind: 'action' | 'decision' | 'parallel' | 'error' | 'start' | 'end';
+}
+
+export interface FlowTransition {
+  from: string;
+  to: string;
+  label?: string;            // "if E2E enabled", "on error", "success"
+  kind: 'sequential' | 'conditional' | 'async' | 'error';
+}
+
+export interface Flow {
+  id: string;
+  name: string;
+  source: string;            // PR URL, plan doc, or description
+  steps: FlowStep[];
+  transitions: FlowTransition[];
+}
+
+export interface FlowDiffOverlay {
+  flowId: string;
+  diffSource: string;        // PR URL or commit range
+  stepStatus: Record<string, 'added' | 'removed' | 'modified'>;
+  transitionStatus: Record<string, 'added' | 'removed' | 'modified'>;
+  addedSteps: FlowStep[];
+  addedTransitions: FlowTransition[];
+}
+
+export interface FlowModel {
+  flows: Flow[];
+  diffs: FlowDiffOverlay[];
+}
