@@ -6,16 +6,16 @@ import type { FlowModel, FlowStep } from '../lib/concepts';
 const elk = new ELK();
 const MONO = "'SF Mono','Cascadia Code',ui-monospace,monospace";
 
-// one colour per active flow; cycles if more than six
-const FLOW_PALETTE = ['#58a6ff', '#3fb950', '#d29922', '#bc8cff', '#f778ba', '#39d353'];
+// Grayscale base — colour reserved exclusively for diff overlay (red/green/amber).
+// Node types distinguished by shape, border weight, fill brightness, and border style.
 
 const baseStyles: unknown[] = [
-  // ── nodes ──
+  // ── nodes (grayscale) ──
   {
     selector: 'node.fstep',
     style: {
-      'background-color': '#1c2333',
-      'border-color': '#4a5a70',
+      'background-color': '#161b22',
+      'border-color': '#4b5563',
       'border-width': 1.5,
       label: 'data(label)',
       color: '#c9d1d9',
@@ -35,9 +35,7 @@ const baseStyles: unknown[] = [
     selector: 'node.fstep.decision',
     style: {
       shape: 'diamond',
-      'background-color': '#1a1f2e',
-      'border-color': '#d29922',
-      color: '#e3b341',
+      'border-color': '#6b7280',
       'font-size': 9,
       padding: 16,
     },
@@ -45,38 +43,39 @@ const baseStyles: unknown[] = [
   {
     selector: 'node.fstep.flow-start',
     style: {
-      'background-color': '#0e4429',
-      'border-color': '#3fb950',
-      color: '#3fb950',
+      'background-color': '#1e2530',
+      'border-color': '#9ca3af',
+      'border-width': 2,
+      color: '#e5e7eb',
       'font-weight': '600',
     },
   },
   {
     selector: 'node.fstep.flow-end',
     style: {
-      'background-color': '#21262d',
-      'border-color': '#8b949e',
-      color: '#8b949e',
-      'border-width': 2,
+      'border-color': '#6b7280',
+      color: '#6b7280',
+      'border-width': 2.5,
     },
   },
   {
     selector: 'node.fstep.error',
-    style: { 'background-color': '#3d1a1a', 'border-color': '#f85149', color: '#f85149' },
+    style: { 'border-color': '#6b7280', 'border-style': 'dashed', color: '#9ca3af' },
   },
   {
     selector: 'node.fstep.parallel-step',
-    style: { 'background-color': '#1c2333', 'border-color': '#bc8cff', color: '#bc8cff' },
+    style: { 'border-color': '#6b7280', color: '#9ca3af' },
   },
   // compound parent (progressive disclosure)
   {
     selector: 'node.fstep:parent',
     style: {
-      'background-color': '#161b22',
-      'background-opacity': 0.6,
+      'background-color': '#0d1117',
+      'background-opacity': 0.5,
+      'border-color': '#30363d',
       'border-width': 1.5,
       label: 'data(label)',
-      color: '#8b949e',
+      color: '#6b7280',
       'font-size': 11,
       'font-weight': '600',
       'text-valign': 'top',
@@ -90,11 +89,11 @@ const baseStyles: unknown[] = [
     selector: 'node.flow-group',
     style: {
       'background-color': '#0d1117',
-      'background-opacity': 0.3,
-      'border-color': '#30363d',
+      'background-opacity': 0.25,
+      'border-color': '#21262d',
       'border-width': 1,
       label: 'data(label)',
-      color: '#6e7681',
+      color: '#4b5563',
       'font-family': MONO,
       'font-size': 11,
       'font-weight': '600',
@@ -105,14 +104,14 @@ const baseStyles: unknown[] = [
       shape: 'round-rectangle',
     },
   },
-  // ── edges ──
+  // ── edges (grayscale) ──
   {
     selector: 'edge.fedge',
     style: {
-      width: 2,
-      'line-color': '#4a5a70',
+      width: 1.8,
+      'line-color': '#4b5563',
       'target-arrow-shape': 'triangle',
-      'target-arrow-color': '#4a5a70',
+      'target-arrow-color': '#4b5563',
       'curve-style': 'bezier',
       'arrow-scale': 0.8,
       opacity: 0.7,
@@ -122,18 +121,11 @@ const baseStyles: unknown[] = [
     selector: 'edge.fedge.conditional',
     style: {
       'line-style': 'dashed',
-      label: 'data(label)',
-      'font-family': MONO,
-      'font-size': 8,
-      color: '#d29922',
-      'text-background-color': '#0d1117',
-      'text-background-opacity': 0.85,
-      'text-background-padding': '2',
     },
   },
   {
     selector: 'edge.fedge.error-edge',
-    style: { 'line-color': '#f85149', 'target-arrow-color': '#f85149', 'line-style': 'dashed' },
+    style: { 'line-style': 'dashed' },
   },
   {
     selector: 'edge.fedge.async-edge',
@@ -145,14 +137,14 @@ const baseStyles: unknown[] = [
       label: 'data(label)',
       'font-family': MONO,
       'font-size': 8,
-      color: '#8b949e',
+      color: '#6b7280',
       'text-background-color': '#0d1117',
       'text-background-opacity': 0.85,
       'text-background-padding': '2',
       'text-rotation': 'autorotate',
     },
   },
-  // ── diff overlay ──
+  // ── diff overlay (the ONLY colour) ──
   {
     selector: '.diff-added',
     style: { 'border-color': '#3fb950', 'border-width': 3 },
@@ -185,10 +177,10 @@ const baseStyles: unknown[] = [
     selector: 'edge.diff-modified',
     style: { 'line-color': '#d29922', 'target-arrow-color': '#d29922' },
   },
-  // ── interaction ──
+  // ── interaction (neutral) ──
   { selector: '.dim', style: { opacity: 0.06, 'text-opacity': 0.06 } },
-  { selector: 'node.sel', style: { 'border-color': '#e3b341', 'border-width': 3 } },
-  { selector: 'node.hov', style: { 'overlay-color': '#58a6ff', 'overlay-opacity': 0.28, 'overlay-padding': 3 } },
+  { selector: 'node.sel', style: { 'border-color': '#f0f6fc', 'border-width': 2.5 } },
+  { selector: 'node.hov', style: { 'overlay-color': '#9ca3af', 'overlay-opacity': 0.2, 'overlay-padding': 3 } },
 ];
 
 export function FlowView(props: {
@@ -212,12 +204,6 @@ export function FlowView(props: {
   const stepFlowMap = new Map<string, string>();
   for (const f of props.model.flows) {
     for (const s of f.steps) stepFlowMap.set(`${f.id}:${s.id}`, f.id);
-  }
-
-  function colorFor(flowId: string): string {
-    const ids = [...props.activeFlows()];
-    const i = ids.indexOf(flowId);
-    return FLOW_PALETTE[(i >= 0 ? i : 0) % FLOW_PALETTE.length];
   }
 
   function nodeId(flowId: string, stepId: string) {
@@ -380,27 +366,6 @@ export function FlowView(props: {
     walk(res, 0, 0);
   }
 
-  function applyFlowColors() {
-    if (!cy) return;
-    for (const flowId of props.activeFlows()) {
-      const col = colorFor(flowId);
-      cy.nodes(`[flowId="${flowId}"]`).forEach((n) => {
-        // don't override diff styles
-        if (!n.hasClass('diff-added') && !n.hasClass('diff-removed') && !n.hasClass('diff-modified')) {
-          n.style('border-color', col);
-        }
-      });
-      cy.getElementById(`grp:${flowId}`).style('border-color', col);
-      cy.edges(`[flowId="${flowId}"]`).forEach((e) => {
-        if (!e.hasClass('diff-added') && !e.hasClass('diff-removed') && !e.hasClass('diff-modified')) {
-          if (!e.hasClass('conditional') && !e.hasClass('error-edge')) {
-            e.style({ 'line-color': col, 'target-arrow-color': col });
-          }
-        }
-      });
-    }
-  }
-
   function applyDiff() {
     if (!cy) return;
     const diffId = props.activeDiff();
@@ -493,7 +458,6 @@ export function FlowView(props: {
     cy.add(computeElements());
     await layout();
     if (!cy) return;
-    applyFlowColors();
     if (props.activeDiff()) applyDiff();
     if (props.selected()) applySelect();
     cy.viewport({ zoom, pan });
@@ -505,7 +469,6 @@ export function FlowView(props: {
     cy.add(computeElements());
     await layout();
     if (!cy) return;
-    applyFlowColors();
     if (props.activeDiff()) applyDiff();
     cy.fit(undefined, 38);
   }
@@ -548,7 +511,6 @@ export function FlowView(props: {
     cy.add(computeElements());
     void layout().then(() => {
       if (!cy) return;
-      applyFlowColors();
       cy.fit(undefined, 38);
     });
 
@@ -645,10 +607,10 @@ export function FlowView(props: {
       </div>
       <div id="legend">
         <b>Flow diagram</b>
-        <div class="lrow"><div class="lsw" style={{ background: '#0e4429', border: '1px solid #3fb950' }} /> start</div>
-        <div class="lrow"><div class="lsw" style={{ background: '#1c2333', border: '1px solid #4a5a70' }} /> action</div>
-        <div class="lrow"><div class="lsw" style={{ background: '#1a1f2e', border: '1px solid #d29922', 'border-radius': '0' }} /> decision</div>
-        <div class="lrow"><div class="lsw" style={{ background: '#3d1a1a', border: '1px solid #f85149' }} /> error</div>
+        <div class="lrow"><div class="lsw" style={{ background: '#1e2530', border: '2px solid #9ca3af' }} /> start</div>
+        <div class="lrow"><div class="lsw" style={{ background: '#161b22', border: '1.5px solid #4b5563' }} /> action</div>
+        <div class="lrow"><div class="lsw" style={{ background: '#161b22', border: '1.5px solid #6b7280', 'border-radius': '0' }} /> decision</div>
+        <div class="lrow"><div class="lsw" style={{ background: '#161b22', border: '1.5px dashed #6b7280' }} /> error</div>
         <Show when={props.activeDiff()}>
           <div style={{ 'border-top': '1px solid #30363d', 'margin-top': '6px', 'padding-top': '6px' }}>
             <div class="lrow"><div class="lsw" style={{ border: '2px solid #3fb950' }} /> added</div>
