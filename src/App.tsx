@@ -1,10 +1,13 @@
-import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from 'solid-js';
+import { batch, createEffect, createMemo, createSignal, For, lazy, Match, on, onCleanup, onMount, Show, Suspense, Switch } from 'solid-js';
 import type { ChangeModel, CodeModel, CodeNode, ConceptModel, FlowModel, FlowStep } from './lib/concepts';
+import type { DiffFile } from './components/DiffModal';
 import { ConceptView } from './components/ConceptView';
 import { FlowView } from './components/FlowView';
 import { FlowExplorer } from './components/FlowExplorer';
 import { GitGraph } from './components/GitGraph';
 import { HierarchyExplorer } from './components/HierarchyExplorer';
+
+const DiffModal = lazy(() => import('./components/DiffModal'));
 
 const STORE_KEY = 'archwire';
 function saveSet(key: string, set: Set<string>) {
@@ -48,6 +51,7 @@ export function App() {
   const [flowStepSel, setFlowStepSel] = createSignal<string | null>(null);
   const [flowExpanded, setFlowExpanded] = createSignal<Set<string>>(new Set());
   const [diffFilter, setDiffFilter] = createSignal('');
+  const [diffModal, setDiffModal] = createSignal<{ files: DiffFile[]; codeRefPath: string; branch: string } | null>(null);
 
   async function loadJson<T>(urls: string[]): Promise<T | null> {
     for (const url of urls) {
@@ -301,6 +305,37 @@ export function App() {
     return diffSources().filter(([src]) => !q || src.toLowerCase().includes(q));
   };
 
+  // ── diff modal (Monaco code viewer) ──
+  function branchSlug(name: string): string {
+    return name.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
+  }
+  const diffDataCache = new Map<string, Record<string, { original: string; modified: string }> | null>();
+  async function handleCodeRefClick(codeRefPath: string) {
+    const diff = activeDiff();
+    if (!diff || !diff.startsWith('branch: ')) return;
+    const branchName = diff.slice(8);
+    const slug = branchSlug(branchName);
+    if (!diffDataCache.has(slug)) {
+      try {
+        const res = await fetch(`/diffs/${slug}.json`);
+        const json = res.ok ? await res.json() : null;
+        diffDataCache.set(slug, json?.files ?? null);
+      } catch { diffDataCache.set(slug, null); }
+    }
+    const files = diffDataCache.get(slug);
+    if (!files) return;
+    const norm = codeRefPath.replace(/^\.\//, '');
+    const dot = norm.lastIndexOf('.');
+    const stem = dot > 0 ? norm.slice(0, dot) : norm;
+    const matched: DiffFile[] = [];
+    for (const [fp, content] of Object.entries(files)) {
+      if (fp === norm || fp.startsWith(stem + '/')) {
+        matched.push({ path: fp, original: content.original, modified: content.modified });
+      }
+    }
+    if (matched.length) setDiffModal({ files: matched, codeRefPath: norm, branch: branchName });
+  }
+
   const toggleFlow = (flowId: string) =>
     setActiveFlows((prev) => {
       const next = new Set(prev);
@@ -450,7 +485,7 @@ export function App() {
                         <h3>Code references</h3>
                         <ul class="paths">
                           <For each={fs().step.codeRefs}>
-                            {(r) => <li><code class="path">{r.path}{r.line ? `:${r.line}` : ''}</code></li>}
+                            {(r) => <li class={activeDiff()?.startsWith('branch: ') ? 'clickable' : ''} onClick={() => handleCodeRefClick(r.path)}><code class="path">{r.path}{r.line ? `:${r.line}` : ''}</code></li>}
                           </For>
                         </ul>
                       </Show>
@@ -573,6 +608,7 @@ export function App() {
                 setSelected={setFlowStepSel}
                 expanded={flowExpanded}
                 toggleExpand={flowToggleExpand}
+                onCodeRefClick={handleCodeRefClick}
               />
             )}
           </Match>
@@ -613,7 +649,17 @@ export function App() {
             toggleExpand={flowToggleExpand}
             selected={flowStepSel}
             setSelected={setFlowStepSel}
+            onCodeRefClick={handleCodeRefClick}
           />
+        )}
+      </Show>
+      <Show when={diffModal()}>
+        {(dm) => (
+          <Suspense fallback={
+            <div class="diff-overlay"><div class="diff-modal"><div class="diff-loading">loading diff viewer…</div></div></div>
+          }>
+            <DiffModal {...dm()} onClose={() => setDiffModal(null)} />
+          </Suspense>
         )}
       </Show>
     </div>

@@ -218,6 +218,7 @@ export function FlowView(props: {
   setSelected: (v: string | null) => void;
   expanded: () => Set<string>;
   toggleExpand: (id: string) => void;
+  onCodeRefClick?: (path: string) => void;
 }) {
   let container: HTMLDivElement | undefined;
   let tip: HTMLDivElement | undefined;
@@ -322,6 +323,7 @@ export function FlowView(props: {
               id: refNid,
               label,
               fullPath: `${ref.path}${ref.line ? `:${ref.line}` : ''}`,
+              codeRefPath: ref.path,
               parent: stepNid,
               flowId,
             },
@@ -593,6 +595,11 @@ export function FlowView(props: {
         if (performance.now() - lastTapAt < 320) return;
         props.setSelected(null);
       }
+    });
+    cy.on('tap', 'node.fcode', (ev) => {
+      const node = ev.target as cytoscape.NodeSingular;
+      const codePath = node.data('codeRefPath') as string;
+      if (codePath && props.onCodeRefClick) props.onCodeRefClick(codePath);
     });
     cy.on('mouseover', 'node.fstep, node.fcode', (ev) => {
       tipOn = true;

@@ -9,7 +9,7 @@
 //   --local-only      Only scan local branches, skip remote tracking
 //   --no-fetch        Skip git fetch
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -149,6 +149,31 @@ for (const [name, ref] of branches) {
 
   if (affected.size) {
     hitCount++;
+
+    // generate diff file with base + modified content for each matched file
+    const matchedFiles = new Set();
+    for (const cf of changedFiles) {
+      for (const ref2 of codeRefs) {
+        if (cf === ref2.path || cf.startsWith(ref2.stem + '/')) {
+          matchedFiles.add(cf);
+          break;
+        }
+      }
+    }
+    if (matchedFiles.size) {
+      const diffFiles = {};
+      for (const fp of matchedFiles) {
+        let original = '', modified = '';
+        try { original = execSync(`git show ${baseBranch}:${fp}`, { cwd: targetAbs, encoding: 'utf8', maxBuffer: 5 * 1024 * 1024, stdio: 'pipe' }); } catch { /* new file */ }
+        try { modified = execSync(`git show ${ref}:${fp}`, { cwd: targetAbs, encoding: 'utf8', maxBuffer: 5 * 1024 * 1024, stdio: 'pipe' }); } catch { /* deleted file */ }
+        diffFiles[fp] = { original, modified };
+      }
+      const slug = name.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
+      const diffDir = path.join(repoRoot, 'public', 'diffs');
+      if (!existsSync(diffDir)) mkdirSync(diffDir, { recursive: true });
+      writeFileSync(path.join(diffDir, `${slug}.json`), JSON.stringify({ branch: name, base: baseBranch, files: diffFiles }));
+    }
+
     for (const [flowId, stepIds] of affected) {
       const stepStatus = {};
       for (const sid of stepIds) stepStatus[sid] = 'modified';

@@ -813,3 +813,120 @@ code.path,
   color: var(--text-dim);
   line-height: 1;
 }
+
+/* clickable code refs in sidebar */
+.paths li.clickable {
+  cursor: pointer;
+}
+.paths li.clickable:hover code.path {
+  color: var(--accent);
+}
+
+/* ── diff modal ──────────────────────────────────── */
+.diff-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.diff-modal {
+  width: 92vw;
+  height: 88vh;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+.diff-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.diff-header-info {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+.diff-branch {
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(88, 166, 255, 0.12);
+  border-radius: 4px;
+  padding: 2px 8px;
+  flex-shrink: 0;
+  font-family: var(--mono);
+}
+.diff-path {
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+}
+.diff-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.diff-close:hover {
+  color: var(--text-bright);
+  background: var(--surface2);
+}
+.diff-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.diff-tab {
+  padding: 6px 14px;
+  font-size: 10px;
+  font-family: var(--mono);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.diff-tab:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+}
+.diff-tab.active {
+  color: var(--text-bright);
+  border-bottom-color: var(--accent);
+}
+.diff-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.diff-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-family: var(--mono);
+}

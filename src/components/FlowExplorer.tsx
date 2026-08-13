@@ -8,6 +8,8 @@ interface TreeItem {
   stepKind?: FlowStep['kind'];
   /** ID passed to setSelected when clicked (steps + code refs → parent step) */
   selectId?: string;
+  /** raw file path for code ref items (diff modal) */
+  codeRefPath?: string;
 }
 
 const STEP_ICON: Record<string, string> = {
@@ -26,6 +28,7 @@ export function FlowExplorer(props: {
   toggleExpand: (id: string) => void;
   selected: () => string | null;
   setSelected: (v: string | null) => void;
+  onCodeRefClick?: (path: string) => void;
 }) {
   // ── static indexes ──
   const stepsByFlow = new Map<string, FlowStep[]>();
@@ -87,6 +90,7 @@ export function FlowExplorer(props: {
         label: `${ref.path}${ref.line ? `:${ref.line}` : ''}`,
         kind: 'coderef',
         selectId: `${flowId}:${stepId}`,
+        codeRefPath: ref.path,
       });
     });
     return kids;
@@ -204,6 +208,7 @@ export function FlowExplorer(props: {
           onClick={() => {
             setFocusId(p.item.id);
             if (p.item.selectId) props.setSelected(p.item.selectId);
+            if (p.item.codeRefPath && props.onCodeRefClick) props.onCodeRefClick(p.item.codeRefPath);
           }}
         >
           <span
