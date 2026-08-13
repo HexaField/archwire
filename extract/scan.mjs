@@ -36,11 +36,7 @@ const scopesPath = scopesArg || path.join(here, 'scopes.json');
 
 if (!existsSync(scopesPath)) {
   console.error(`no scopes file at ${scopesPath}`);
-  console.error('create one — JSON array of scope descriptions:');
-  console.error(JSON.stringify([
-    'create a new local perspective',
-    'join a neighbourhood from a URL',
-  ], null, 2));
+  console.error('copy scopes.sample.json → scopes.json and edit for your target repo.');
   process.exit(1);
 }
 

@@ -5,7 +5,7 @@ drills from a codebase's high-level **concepts** down to the **code** that
 implements them; a **change axis** (a git/plan graph) then overlays each PR or
 planned change onto that architecture, showing a change's impact at the highest
 (concept) and lowest (file) levels at once. Two jobs: **learn** a system, and
-**plan** changes to it. Pilot target = AD4M's Holograph initiative.
+**plan** changes to it.
 
 The guiding principle: **one model, many overlays.** The concept model gets
 extracted once and stays stable; the code grounding hangs off it; git/plan changes
@@ -181,11 +181,9 @@ src/components/DsmView.tsx       # (unused) Design Structure Matrix — returns 
 
 ## Roadmap
 
-- **Now:** concept⇢code canvas + change overlay (Holograph PRs + planned deltas).
+- **Now:** concept⇢code canvas + change overlay + LLM-driven flow extraction.
 - **Next:** commit-level scrubbing (per-commit deltas, not just per-PR); the
-  coupling **matrix lens** at the code level; add the missing sync-substrate
-  concept (Holograph #843–#845 touch a `HolographSyncModule` no concept covers);
-  a live git source (git + `gh`) beyond the curated model; agent-authored proposal
-  overlays.
+  coupling **matrix lens** at the code level; a live git source (git + `gh`)
+  beyond the curated model; agent-authored proposal overlays.
 - **Deeper grounding:** imports / calls under the file tree need a Rust extractor
   (Joern needs a JVM, absent here) — rust-analyzer SCIP + guppy per the plan.

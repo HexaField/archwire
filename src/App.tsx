@@ -72,7 +72,7 @@ export function App() {
     // load all four together; set concepts LAST so the canvas mounts with the
     // code + change models already present (it indexes props.code once at init).
     const [c, codeModel, ch, fl] = await Promise.all([
-      loadJson<ConceptModel>(['/concepts.json', '/concepts.sample.json']),
+      loadJson<ConceptModel>(['/concepts.json']),
       loadJson<CodeModel>(['/code.json']),
       loadJson<ChangeModel>(['/changes.json']),
       loadJson<FlowModel>(['/flows.json']),

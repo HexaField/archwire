@@ -1,0 +1,10 @@
+[
+  "user login and session creation",
+  {
+    "scope": "handle an incoming API request",
+    "files": [
+      "src/api/router.ts",
+      "src/api/middleware.ts"
+    ]
+  }
+]

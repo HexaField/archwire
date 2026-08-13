@@ -63,7 +63,7 @@ Any OpenAI-compatible API works — llama.cpp, Ollama, vLLM, OpenAI, etc.
 
 #### Scopes file
 
-`extract/scopes.json` defines the flows to extract. Each entry can specify source files to include in the LLM prompt:
+`extract/scopes.json` (gitignored, target-specific) defines the flows to extract. Copy `scopes.sample.json` to get started. Each entry can specify source files to include in the LLM prompt:
 
 ```json
 [
