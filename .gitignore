@@ -6,5 +6,6 @@ public/code.json
 public/changes.json
 public/flows.json
 public/diffs/
+extract/config.json
 *.log
 .DS_Store

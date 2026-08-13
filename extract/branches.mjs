@@ -72,7 +72,7 @@ if (!flowData.flows?.length) {
 const codeRefs = []; // {path, stem, flowId, stepId}
 for (const flow of flowData.flows) {
   for (const step of flow.steps) {
-    for (const ref of step.codeRefs) {
+    for (const ref of (step.codeRefs ?? [])) {
       const p = ref.path.replace(/^\.\//, '');
       const dot = p.lastIndexOf('.');
       const stem = dot > 0 ? p.slice(0, dot) : p;
