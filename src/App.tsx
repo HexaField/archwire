@@ -47,6 +47,7 @@ export function App() {
   const [activeDiff, setActiveDiff] = createSignal<string | null>(null);
   const [flowStepSel, setFlowStepSel] = createSignal<string | null>(null);
   const [flowExpanded, setFlowExpanded] = createSignal<Set<string>>(new Set());
+  const [diffFilter, setDiffFilter] = createSignal('');
 
   async function loadJson<T>(urls: string[]): Promise<T | null> {
     for (const url of urls) {
@@ -284,6 +285,22 @@ export function App() {
   createEffect(on(activeDiff, (v) => saveStr('active-diff', v), { defer: true }));
 
   // ── flow helpers ──
+  /** Unique diff sources with total affected-step counts, sorted alphabetically */
+  const diffSources = (): [string, number][] => {
+    const fm = flows();
+    if (!fm) return [];
+    const map = new Map<string, number>();
+    for (const d of fm.diffs) {
+      const count = Object.keys(d.stepStatus).length + d.addedSteps.length;
+      map.set(d.diffSource, (map.get(d.diffSource) ?? 0) + count);
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  };
+  const filteredDiffSources = () => {
+    const q = diffFilter().toLowerCase();
+    return diffSources().filter(([src]) => !q || src.toLowerCase().includes(q));
+  };
+
   const toggleFlow = (flowId: string) =>
     setActiveFlows((prev) => {
       const next = new Set(prev);
@@ -348,22 +365,34 @@ export function App() {
                         </For>
                         <Show when={fm().diffs.length}>
                           <h3>Diff overlays</h3>
-                          <div class="flow-toggle">
-                            <label>
-                              <input type="radio" name="diff" checked={!activeDiff()} onChange={() => setActiveDiff(null)} />
-                              <span class="flow-toggle-name">none</span>
-                            </label>
+                          <Show when={diffSources().length > 5}>
+                            <input
+                              type="text"
+                              class="diff-filter"
+                              placeholder="filter branches…"
+                              value={diffFilter()}
+                              onInput={(e) => setDiffFilter(e.currentTarget.value)}
+                            />
+                          </Show>
+                          <div class="diff-list">
+                            <div class="flow-toggle">
+                              <label>
+                                <input type="radio" name="diff" checked={!activeDiff()} onChange={() => setActiveDiff(null)} />
+                                <span class="flow-toggle-name">none</span>
+                              </label>
+                            </div>
+                            <For each={filteredDiffSources()}>
+                              {([src, count]) => (
+                                <div class="flow-toggle">
+                                  <label>
+                                    <input type="radio" name="diff" checked={activeDiff() === src} onChange={() => setActiveDiff(src)} />
+                                    <span class="flow-toggle-name">{src}</span>
+                                    <span class="diff-step-count">{count}</span>
+                                  </label>
+                                </div>
+                              )}
+                            </For>
                           </div>
-                          <For each={[...new Set(fm().diffs.map((d) => d.diffSource))]}>
-                            {(src) => (
-                              <div class="flow-toggle">
-                                <label>
-                                  <input type="radio" name="diff" checked={activeDiff() === src} onChange={() => setActiveDiff(src)} />
-                                  <span class="flow-toggle-name">{src}</span>
-                                </label>
-                              </div>
-                            )}
-                          </For>
                         </Show>
                         <h3>How to use</h3>
                         <div class="detail-row"><span class="detail-label">Toggle</span> flows on/off above</div>

@@ -771,6 +771,39 @@ code.path,
 .fds-rem { color: var(--red); }
 .fds-mod { color: var(--orange); }
 
+/* diff overlay filter + list */
+.diff-filter {
+  width: 100%;
+  padding: 4px 8px;
+  margin-bottom: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.diff-filter:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.diff-filter::placeholder {
+  color: var(--text-dim);
+}
+.diff-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.diff-step-count {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--text-dim);
+  background: var(--surface2);
+  border-radius: 8px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+}
+
 /* flow tree step-kind icons */
 .flow-tree-icon {
   font-size: 8px;
