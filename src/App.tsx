@@ -2,8 +2,27 @@ import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanu
 import type { ChangeModel, CodeModel, CodeNode, ConceptModel, FlowModel, FlowStep } from './lib/concepts';
 import { ConceptView } from './components/ConceptView';
 import { FlowView } from './components/FlowView';
+import { FlowExplorer } from './components/FlowExplorer';
 import { GitGraph } from './components/GitGraph';
 import { HierarchyExplorer } from './components/HierarchyExplorer';
+
+const STORE_KEY = 'archwire';
+function saveSet(key: string, set: Set<string>) {
+  try { localStorage.setItem(`${STORE_KEY}:${key}`, JSON.stringify([...set])); } catch { /* quota */ }
+}
+function loadSet(key: string): Set<string> | null {
+  try {
+    const v = localStorage.getItem(`${STORE_KEY}:${key}`);
+    if (v) return new Set(JSON.parse(v) as string[]);
+  } catch { /* corrupt */ }
+  return null;
+}
+function saveStr(key: string, v: string | null) {
+  try { localStorage.setItem(`${STORE_KEY}:${key}`, v ?? ''); } catch { /* quota */ }
+}
+function loadStr(key: string): string | null {
+  try { return localStorage.getItem(`${STORE_KEY}:${key}`); } catch { return null; }
+}
 
 export function App() {
   const [concepts, setConcepts] = createSignal<ConceptModel | null>(null);
@@ -20,10 +39,14 @@ export function App() {
 
   // flow view state
   type ViewMode = 'concepts' | 'flows';
-  const [view, setView] = createSignal<ViewMode>('concepts');
+  const urlView = new URLSearchParams(window.location.search).get('view');
+  const [view, setView] = createSignal<ViewMode>(
+    urlView === 'flows' || urlView === 'concepts' ? urlView : 'concepts',
+  );
   const [activeFlows, setActiveFlows] = createSignal<Set<string>>(new Set());
   const [activeDiff, setActiveDiff] = createSignal<string | null>(null);
   const [flowStepSel, setFlowStepSel] = createSignal<string | null>(null);
+  const [flowExpanded, setFlowExpanded] = createSignal<Set<string>>(new Set());
 
   async function loadJson<T>(urls: string[]): Promise<T | null> {
     for (const url of urls) {
@@ -53,10 +76,27 @@ export function App() {
     if (ch) setChanges(ch);
     if (fl) {
       setFlows(fl);
-      // auto-activate all flows; auto-switch to flow view when no concept model
-      setActiveFlows(new Set(fl.flows.map((f) => f.id)));
-      if (!c) setView('flows');
+      const validIds = new Set(fl.flows.map((f) => f.id));
+      // restore or auto-activate all flows
+      const savedAF = loadSet('active-flows');
+      if (savedAF) {
+        setActiveFlows(new Set([...savedAF].filter((id) => validIds.has(id))));
+      } else {
+        setActiveFlows(validIds);
+      }
+      // restore or auto-expand flow roots in hierarchy
+      const savedFE = loadSet('flow-expanded');
+      setFlowExpanded(savedFE ?? new Set(fl.flows.map((f) => `flow:${f.id}`)));
+      // restore diff
+      const savedDiff = loadStr('active-diff');
+      if (savedDiff) setActiveDiff(savedDiff || null);
+      // auto-switch to flow view when no concept model (unless URL param set)
+      if (!c && view() === 'concepts') setView('flows');
     }
+    // restore concept expanded state
+    const savedCE = loadSet('concept-expanded');
+    if (savedCE) setExpanded(savedCE);
+
     if (c) setConcepts(c);
     if (!c && !fl) setErr('No concept model or flow data — provide public/concepts.json or public/flows.json');
   });
@@ -136,7 +176,10 @@ export function App() {
       } else next.add(id);
       return next;
     });
-  const collapseAll = () => setExpanded(new Set<string>());
+  const collapseAll = () => {
+    if (view() === 'flows') setFlowExpanded(new Set<string>());
+    else setExpanded(new Set<string>());
+  };
   // reveal a change on the canvas: open its touched concepts down to the changed
   // files (a deliberate button — selecting a change no longer auto-expands).
   const revealChange = () => {
@@ -218,6 +261,27 @@ export function App() {
 
   const laneName = (id: string) => changes()?.lanes.find((l) => l.id === id)?.name ?? id;
   const laneColor = (id: string) => changes()?.lanes.find((l) => l.id === id)?.color ?? '#8b949e';
+
+  // ── flow expand (shared between canvas + explorer) ──
+  const flowToggleExpand = (id: string) =>
+    setFlowExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  // ── persistence: localStorage for state, URL param for view ──
+  // defer: true → only fire on changes, not on initial value
+  createEffect(on(view, (v) => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('view', v);
+    window.history.replaceState({}, '', `?${params.toString()}`);
+  }, { defer: true }));
+  createEffect(on(expanded, (s) => saveSet('concept-expanded', s), { defer: true }));
+  createEffect(on(flowExpanded, (s) => saveSet('flow-expanded', s), { defer: true }));
+  createEffect(on(activeFlows, (s) => saveSet('active-flows', s), { defer: true }));
+  createEffect(on(activeDiff, (v) => saveStr('active-diff', v), { defer: true }));
 
   // ── flow helpers ──
   const toggleFlow = (flowId: string) =>
@@ -478,6 +542,8 @@ export function App() {
                 activeDiff={activeDiff}
                 selected={flowStepSel}
                 setSelected={setFlowStepSel}
+                expanded={flowExpanded}
+                toggleExpand={flowToggleExpand}
               />
             )}
           </Match>
@@ -506,6 +572,18 @@ export function App() {
             setSelected={(v) => { setChangeSel(null); setCSel(v); }}
             hovered={hovered}
             setHovered={setHovered}
+          />
+        )}
+      </Show>
+      <Show when={view() === 'flows' && flows()}>
+        {(fm) => (
+          <FlowExplorer
+            model={fm()}
+            activeFlows={activeFlows}
+            expanded={flowExpanded}
+            toggleExpand={flowToggleExpand}
+            selected={flowStepSel}
+            setSelected={setFlowStepSel}
           />
         )}
       </Show>

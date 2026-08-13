@@ -1,4 +1,4 @@
-import { createEffect, createSignal, on, onCleanup, onMount, Show } from 'solid-js';
+import { createEffect, on, onCleanup, onMount, Show } from 'solid-js';
 import cytoscape from 'cytoscape';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import type { FlowModel, FlowStep } from '../lib/concepts';
@@ -8,6 +8,12 @@ const MONO = "'SF Mono','Cascadia Code',ui-monospace,monospace";
 
 // Grayscale base — colour reserved exclusively for diff overlay (red/green/amber).
 // Node types distinguished by shape, border weight, fill brightness, and border style.
+
+function shortPath(p: string): string {
+  const parts = p.split('/');
+  if (parts.length <= 2) return p;
+  return '…/' + parts.slice(-2).join('/');
+}
 
 const baseStyles: unknown[] = [
   // ── nodes (grayscale) ──
@@ -104,6 +110,27 @@ const baseStyles: unknown[] = [
       shape: 'round-rectangle',
     },
   },
+  // ── code ref nodes (shown when a step is expanded) ──
+  {
+    selector: 'node.fcode',
+    style: {
+      'background-color': '#0d1117',
+      'border-color': '#30363d',
+      'border-width': 1,
+      label: 'data(label)',
+      color: '#6b7280',
+      'font-family': MONO,
+      'font-size': 8,
+      'text-wrap': 'wrap',
+      'text-max-width': 200,
+      'text-valign': 'center',
+      'text-halign': 'center',
+      shape: 'round-rectangle',
+      width: 'label',
+      height: 'label',
+      padding: 5,
+    },
+  },
   // ── edges (grayscale) ──
   {
     selector: 'edge.fedge',
@@ -189,12 +216,13 @@ export function FlowView(props: {
   activeDiff: () => string | null;
   selected: () => string | null;
   setSelected: (v: string | null) => void;
+  expanded: () => Set<string>;
+  toggleExpand: (id: string) => void;
 }) {
   let container: HTMLDivElement | undefined;
   let tip: HTMLDivElement | undefined;
   let cy: cytoscape.Core | undefined;
   let tipOn = false;
-  const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
 
   const flowById = new Map(props.model.flows.map((f) => [f.id, f]));
   const diffByKey = new Map(
@@ -226,7 +254,7 @@ export function FlowView(props: {
 
   function computeElements(): cytoscape.ElementDefinition[] {
     const active = props.activeFlows();
-    const exp = expanded();
+    const exp = props.expanded();
     const els: cytoscape.ElementDefinition[] = [];
 
     for (const flowId of active) {
@@ -277,6 +305,29 @@ export function FlowView(props: {
           },
           classes: `fstep ${kc}`.trim(),
         });
+      }
+
+      // code ref nodes — appear when parent step is expanded
+      for (const step of flow.steps) {
+        if (!visible.has(step.id)) continue;
+        const stepNid = nodeId(flowId, step.id);
+        if (!exp.has(stepNid)) continue;
+        if (!step.codeRefs.length) continue;
+        for (let i = 0; i < step.codeRefs.length; i++) {
+          const ref = step.codeRefs[i];
+          const refNid = `${stepNid}:ref:${i}`;
+          const label = ref.line ? `${shortPath(ref.path)}:${ref.line}` : shortPath(ref.path);
+          els.push({
+            data: {
+              id: refNid,
+              label,
+              fullPath: `${ref.path}${ref.line ? `:${ref.line}` : ''}`,
+              parent: stepNid,
+              flowId,
+            },
+            classes: 'fcode',
+          });
+        }
       }
 
       // edges — only between visible steps; skip edges to/from hidden children
@@ -476,11 +527,17 @@ export function FlowView(props: {
   // ── tooltip ──
   function showTip(node: cytoscape.NodeSingular, rp: { x: number; y: number }) {
     if (!tip) return;
-    const label = node.data('label') as string;
-    const detail = node.data('detail') as string;
-    if (!label) return;
-    (tip.querySelector('.tt') as HTMLElement).textContent = label;
-    (tip.querySelector('.td') as HTMLElement).textContent = detail || '';
+    const fullPath = node.data('fullPath') as string | undefined;
+    if (fullPath) {
+      (tip.querySelector('.tt') as HTMLElement).textContent = fullPath;
+      (tip.querySelector('.td') as HTMLElement).textContent = '';
+    } else {
+      const label = node.data('label') as string;
+      const detail = node.data('detail') as string;
+      if (!label) return;
+      (tip.querySelector('.tt') as HTMLElement).textContent = label;
+      (tip.querySelector('.td') as HTMLElement).textContent = detail || '';
+    }
     tip.style.display = 'block';
     moveTip(rp);
   }
@@ -488,17 +545,6 @@ export function FlowView(props: {
     if (tip) { tip.style.left = `${rp.x + 14}px`; tip.style.top = `${rp.y + 14}px`; }
   }
   function hideTip() { if (tip) tip.style.display = 'none'; }
-
-  // ── expand / collapse ──
-  const toggleExpand = (flowId: string, stepId: string) => {
-    const nid = nodeId(flowId, stepId);
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(nid)) next.delete(nid);
-      else next.add(nid);
-      return next;
-    });
-  };
 
   onMount(() => {
     if (!container) return;
@@ -526,13 +572,15 @@ export function FlowView(props: {
       lastTapAt = now;
 
       if (isDbl) {
-        // double-click: expand/collapse if compound, or frame it
+        // double-click: expand/collapse if has sub-steps or code refs; else frame it
         const flowId = node.data('flowId') as string;
         const stepId = node.data('stepId') as string;
         const flow = flowById.get(flowId);
-        const hasChildren = flow?.steps.some((s) => s.parentId === stepId);
-        if (hasChildren) {
-          toggleExpand(flowId, stepId);
+        const hasSubSteps = flow?.steps.some((s) => s.parentId === stepId);
+        const step = flow?.steps.find((s) => s.id === stepId);
+        const hasCodeRefs = (step?.codeRefs.length ?? 0) > 0;
+        if (hasSubSteps || hasCodeRefs) {
+          props.toggleExpand(nodeId(flowId, stepId));
         } else {
           cy?.animate({ fit: { eles: node.closedNeighborhood(), padding: 55 }, duration: 240 });
         }
@@ -546,13 +594,13 @@ export function FlowView(props: {
         props.setSelected(null);
       }
     });
-    cy.on('mouseover', 'node.fstep', (ev) => {
+    cy.on('mouseover', 'node.fstep, node.fcode', (ev) => {
       tipOn = true;
       showTip(ev.target as cytoscape.NodeSingular, ev.renderedPosition);
       (ev.target as cytoscape.NodeSingular).addClass('hov');
     });
     cy.on('mousemove', (ev) => { if (tipOn) moveTip(ev.renderedPosition); });
-    cy.on('mouseout', 'node.fstep', (ev) => {
+    cy.on('mouseout', 'node.fstep, node.fcode', (ev) => {
       tipOn = false;
       hideTip();
       (ev.target as cytoscape.NodeSingular).removeClass('hov');
@@ -560,7 +608,7 @@ export function FlowView(props: {
 
     // reactivity
     createEffect(on(props.activeFlows, () => void fullRebuild(), { defer: true }));
-    createEffect(on(expanded, () => void rebuild(), { defer: true }));
+    createEffect(on(props.expanded, () => void rebuild(), { defer: true }));
     createEffect(on(props.activeDiff, () => void rebuild(), { defer: true }));
     createEffect(on(props.selected, () => applySelect(), { defer: true }));
   });

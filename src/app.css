@@ -770,3 +770,13 @@ code.path,
 .fds-add { color: var(--green); }
 .fds-rem { color: var(--red); }
 .fds-mod { color: var(--orange); }
+
+/* flow tree step-kind icons */
+.flow-tree-icon {
+  font-size: 8px;
+  flex-shrink: 0;
+  width: 12px;
+  text-align: center;
+  color: var(--text-dim);
+  line-height: 1;
+}
