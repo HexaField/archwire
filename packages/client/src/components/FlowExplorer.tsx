@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
-import type { FlowModel, FlowStep } from '../lib/concepts';
+import type { FlowModel, FlowStep } from '@archwire/core';
 
 interface TreeItem {
   id: string;

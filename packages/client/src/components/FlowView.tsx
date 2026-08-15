@@ -1,7 +1,7 @@
 import { createEffect, on, onCleanup, onMount, Show } from 'solid-js';
 import cytoscape from 'cytoscape';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import type { FlowModel, FlowStep } from '../lib/concepts';
+import type { FlowModel, FlowStep } from '@archwire/core';
 
 const elk = new ELK();
 const MONO = "'SF Mono','Cascadia Code',ui-monospace,monospace";

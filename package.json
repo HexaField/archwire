@@ -2,25 +2,18 @@
   "name": "archwire",
   "private": true,
   "type": "module",
-  "version": "0.0.1",
-  "description": "Multi-view architecture wire diagrams from any codebase — one model, many views.",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "check": "tsc --noEmit",
-    "extract": "node extract/extract.mjs"
-  },
-  "dependencies": {
-    "cytoscape": "^3.30.0",
-    "elkjs": "^0.12.0",
-    "monaco-editor": "^0.56.0",
-    "solid-js": "^1.9.3"
+    "dev": "concurrently \"pnpm --filter @archwire/client dev\" \"pnpm --filter @archwire/server dev\"",
+    "build": "pnpm -r --if-present build",
+    "test": "pnpm -r test",
+    "check": "pnpm -r check"
   },
   "devDependencies": {
-    "dependency-cruiser": "^16.10.0",
+    "@types/node": "^25.0.3",
+    "concurrently": "^9.2.1",
+    "tsdown": "^0.22.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vite": "^6.0.0",
-    "vite-plugin-solid": "^2.11.10"
+    "vitest": "^4.0.16"
   }
 }

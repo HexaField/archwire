@@ -1,3 +1,6 @@
+packages:
+  - 'packages/*'
+
 # pnpm 11 blocks native postinstall scripts by default. esbuild (a Vite
 # dependency) needs its script to fetch its binary. Approve it here.
 allowBuilds:

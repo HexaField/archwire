@@ -1,5 +1,5 @@
 import { createSignal, For, Show } from 'solid-js';
-import type { ChangeModel, ChangeNode } from '../lib/concepts';
+import type { ChangeModel, ChangeNode } from '@archwire/core';
 
 export function GitGraph(props: {
   model: ChangeModel;

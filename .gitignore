@@ -1,12 +1,8 @@
 node_modules/
 dist/
-public/model.json
-public/concepts.json
-public/code.json
-public/changes.json
-public/flows.json
-public/diffs/
-extract/config.json
-extract/scopes.json
+
+# server runtime data (repos, extractions, config)
+packages/server/data/
+
 *.log
 .DS_Store

@@ -1,11 +1,12 @@
 import { batch, createEffect, createMemo, createSignal, For, lazy, Match, on, onCleanup, onMount, Show, Suspense, Switch } from 'solid-js';
-import type { ChangeModel, CodeModel, CodeNode, ConceptModel, FlowModel, FlowStep } from './lib/concepts';
+import type { ChangeModel, CodeNode, ConceptModel, FlowModel, FlowStep, RepoInfo } from '@archwire/core';
 import type { DiffFile } from './components/DiffModal';
 import { ConceptView } from './components/ConceptView';
 import { FlowView } from './components/FlowView';
 import { FlowExplorer } from './components/FlowExplorer';
 import { GitGraph } from './components/GitGraph';
 import { HierarchyExplorer } from './components/HierarchyExplorer';
+import * as api from './api/client';
 
 const DiffModal = lazy(() => import('./components/DiffModal'));
 
@@ -28,6 +29,20 @@ function loadStr(key: string): string | null {
 }
 
 export function App() {
+  // ── repo management ──
+  const [repos, setRepos] = createSignal<RepoInfo[]>([]);
+  const [activeRepo, setActiveRepo] = createSignal<string | null>(null);
+  const [repoLoading, setRepoLoading] = createSignal(false);
+  const [showRepoPicker, setShowRepoPicker] = createSignal(false);
+  const [repoInput, setRepoInput] = createSignal('');
+  const [addingRepo, setAddingRepo] = createSignal(false);
+
+  // ── chat ──
+  const [chatInput, setChatInput] = createSignal('');
+  const [chatMessages, setChatMessages] = createSignal<{ role: 'user' | 'assistant'; text: string }[]>([]);
+  const [chatLoading, setChatLoading] = createSignal(false);
+
+  // ── data ──
   const [concepts, setConcepts] = createSignal<ConceptModel | null>(null);
   const [code, setCode] = createSignal<CodeNode[]>([]);
   const [changes, setChanges] = createSignal<ChangeModel | null>(null);
@@ -53,59 +68,136 @@ export function App() {
   const [diffFilter, setDiffFilter] = createSignal('');
   const [diffModal, setDiffModal] = createSignal<{ files: DiffFile[]; codeRefPath: string; branch: string } | null>(null);
 
-  async function loadJson<T>(urls: string[]): Promise<T | null> {
-    for (const url of urls) {
-      try {
-        const r = await fetch(url);
-        if (!r.ok) continue;
-        const text = await r.text();
-        if (text.trimStart().startsWith('<')) continue;
-        return JSON.parse(text) as T;
-      } catch {
-        // next
+  // ── load repo data from server ──
+  async function loadRepoData(repoId: string) {
+    setRepoLoading(true);
+    setErr(null);
+    // clear previous data
+    batch(() => {
+      setConcepts(null);
+      setCode([]);
+      setChanges(null);
+      setFlows(null);
+      setCSel(null);
+      setCThr(null);
+      setChangeSel(null);
+      setFlowStepSel(null);
+      setChatMessages([]);
+    });
+
+    const [c, codeModel, ch, fl] = await Promise.all([
+      api.getConcepts(repoId),
+      api.getCode(repoId),
+      api.getChanges(repoId),
+      api.getFlows(repoId),
+    ]);
+
+    batch(() => {
+      if (codeModel) setCode(codeModel.nodes);
+      if (ch) setChanges(ch);
+      if (fl) {
+        setFlows(fl);
+        const validIds = new Set(fl.flows.map((f) => f.id));
+        const savedAF = loadSet(`active-flows:${repoId}`);
+        if (savedAF) {
+          setActiveFlows(new Set([...savedAF].filter((id) => validIds.has(id))));
+        } else {
+          setActiveFlows(validIds);
+        }
+        const savedFE = loadSet(`flow-expanded:${repoId}`);
+        setFlowExpanded(savedFE ?? new Set(fl.flows.map((f) => `flow:${f.id}`)));
+        const savedDiff = loadStr(`active-diff:${repoId}`);
+        if (savedDiff) setActiveDiff(savedDiff || null);
+        if (!c && view() === 'concepts') setView('flows');
       }
-    }
-    return null;
+      const savedCE = loadSet(`concept-expanded:${repoId}`);
+      if (savedCE) setExpanded(savedCE);
+      if (c) setConcepts(c);
+      if (!c && !fl) setErr('No extracted data yet — run extraction from the sidebar.');
+      setRepoLoading(false);
+    });
   }
 
-  onMount(async () => {
-    // load all four together; set concepts LAST so the canvas mounts with the
-    // code + change models already present (it indexes props.code once at init).
-    const [c, codeModel, ch, fl] = await Promise.all([
-      loadJson<ConceptModel>(['/concepts.json']),
-      loadJson<CodeModel>(['/code.json']),
-      loadJson<ChangeModel>(['/changes.json']),
-      loadJson<FlowModel>(['/flows.json']),
-    ]);
-    if (codeModel) setCode(codeModel.nodes);
-    if (ch) setChanges(ch);
-    if (fl) {
-      setFlows(fl);
-      const validIds = new Set(fl.flows.map((f) => f.id));
-      // restore or auto-activate all flows
-      const savedAF = loadSet('active-flows');
-      if (savedAF) {
-        setActiveFlows(new Set([...savedAF].filter((id) => validIds.has(id))));
-      } else {
-        setActiveFlows(validIds);
-      }
-      // restore or auto-expand flow roots in hierarchy
-      const savedFE = loadSet('flow-expanded');
-      setFlowExpanded(savedFE ?? new Set(fl.flows.map((f) => `flow:${f.id}`)));
-      // restore diff
-      const savedDiff = loadStr('active-diff');
-      if (savedDiff) setActiveDiff(savedDiff || null);
-      // auto-switch to flow view when no concept model (unless URL param set)
-      if (!c && view() === 'concepts') setView('flows');
-    }
-    // restore concept expanded state
-    const savedCE = loadSet('concept-expanded');
-    if (savedCE) setExpanded(savedCE);
+  // ── repo actions ──
+  async function refreshRepos() {
+    const list = await api.listRepos();
+    setRepos(list);
+    return list;
+  }
 
-    if (c) setConcepts(c);
-    if (!c && !fl) setErr('No concept model or flow data — provide public/concepts.json or public/flows.json');
+  async function addRepo() {
+    const input = repoInput().trim();
+    if (!input) return;
+    setAddingRepo(true);
+    try {
+      const source = input.startsWith('http') || input.includes('github.com')
+        ? { url: input }
+        : { path: input };
+      const repo = await api.addRepo(source);
+      setRepoInput('');
+      await refreshRepos();
+      selectRepo(repo.id);
+    } catch (e) {
+      setErr(`Failed to add repo: ${(e as Error).message}`);
+    } finally {
+      setAddingRepo(false);
+    }
+  }
+
+  async function removeRepo(id: string) {
+    await api.removeRepo(id);
+    await refreshRepos();
+    if (activeRepo() === id) {
+      setActiveRepo(null);
+      batch(() => {
+        setConcepts(null);
+        setCode([]);
+        setChanges(null);
+        setFlows(null);
+      });
+    }
+  }
+
+  function selectRepo(id: string) {
+    setActiveRepo(id);
+    saveStr('active-repo', id);
+    setShowRepoPicker(false);
+    loadRepoData(id);
+  }
+
+  // ── chat ──
+  async function sendChat() {
+    const q = chatInput().trim();
+    const repo = activeRepo();
+    if (!q || !repo) return;
+    setChatInput('');
+    setChatMessages((prev) => [...prev, { role: 'user', text: q }]);
+    setChatLoading(true);
+    try {
+      const res = await api.askRepo(repo, q);
+      setChatMessages((prev) => [...prev, { role: 'assistant', text: res.answer }]);
+    } catch (e) {
+      setChatMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${(e as Error).message}` }]);
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
+  // ── init ──
+  onMount(async () => {
+    const list = await refreshRepos();
+    const saved = loadStr('active-repo');
+    const match = saved ? list.find((r) => r.id === saved) : null;
+    if (match) {
+      selectRepo(match.id);
+    } else if (list.length > 0) {
+      selectRepo(list[0].id);
+    } else {
+      setShowRepoPicker(true);
+    }
   });
 
+  // ── concept model helpers (unchanged) ──
   const cm = () => concepts();
   const cbId = () => new Map((cm()?.concepts ?? []).map((c) => [c.id, c]));
   const nameOf = (id: string) => cbId().get(id)?.name ?? id;
@@ -131,10 +223,9 @@ export function App() {
     const ch = id ? changes()?.nodes.find((n) => n.id === id) : undefined;
     return ch ? { concepts: new Set(ch.changedConcepts), paths: ch.changedPaths } : null;
   };
-  // hovering a change previews its impact; the committed (clicked) change persists
   const overlay = () => overlayOf(hoverChange() ?? changeSel());
 
-  // shared expand/collapse state (graph canvas + hierarchy explorer mirror it)
+  // ── expand / collapse (unchanged) ──
   const idx = createMemo(() => {
     const cids = new Set((cm()?.concepts ?? []).map((c) => c.id));
     const sub = new Map<string, string[]>();
@@ -185,8 +276,6 @@ export function App() {
     if (view() === 'flows') setFlowExpanded(new Set<string>());
     else setExpanded(new Set<string>());
   };
-  // reveal a change on the canvas: open its touched concepts down to the changed
-  // files (a deliberate button — selecting a change no longer auto-expands).
   const revealChange = () => {
     const ch = selChangeNode();
     if (!ch) return;
@@ -198,7 +287,6 @@ export function App() {
       ch.changedConcepts.forEach((c) => next.add(c));
       code().forEach((n) => {
         if (n.kind !== 'file' || !matches(n.path)) return;
-        // open the owning concept + every ancestor dir so the file surfaces
         let cur: CodeNode | undefined = n;
         while (cur) {
           if (cur.concept) next.add(cur.concept);
@@ -211,7 +299,7 @@ export function App() {
     });
   };
 
-  // ── undo / redo over the view state (selection + expand) ───────────────
+  // ── undo / redo (unchanged) ──
   type Snap = { cSel: string | null; cThr: string | null; changeSel: string | null; expanded: Set<string> };
   const snapNow = (): Snap => ({ cSel: cSel(), cThr: cThr(), changeSel: changeSel(), expanded: new Set(expanded()) });
   const snapEq = (a: Snap, b: Snap) =>
@@ -221,8 +309,6 @@ export function App() {
   const [histIdx, setHistIdx] = createSignal(0);
   let applying = false;
   let recordScheduled = false;
-  // every selection/expand change records one history entry; sync bursts from a
-  // single interaction coalesce through a microtask so one click = one undo step.
   createEffect(
     on([cSel, cThr, changeSel, expanded], () => {
       if (applying) { applying = false; return; }
@@ -267,7 +353,6 @@ export function App() {
   const laneName = (id: string) => changes()?.lanes.find((l) => l.id === id)?.name ?? id;
   const laneColor = (id: string) => changes()?.lanes.find((l) => l.id === id)?.color ?? '#8b949e';
 
-  // ── flow expand (shared between canvas + explorer) ──
   const flowToggleExpand = (id: string) =>
     setFlowExpanded((prev) => {
       const next = new Set(prev);
@@ -276,20 +361,18 @@ export function App() {
       return next;
     });
 
-  // ── persistence: localStorage for state, URL param for view ──
-  // defer: true → only fire on changes, not on initial value
+  // ── persistence (per-repo keys) ──
   createEffect(on(view, (v) => {
     const params = new URLSearchParams(window.location.search);
     params.set('view', v);
     window.history.replaceState({}, '', `?${params.toString()}`);
   }, { defer: true }));
-  createEffect(on(expanded, (s) => saveSet('concept-expanded', s), { defer: true }));
-  createEffect(on(flowExpanded, (s) => saveSet('flow-expanded', s), { defer: true }));
-  createEffect(on(activeFlows, (s) => saveSet('active-flows', s), { defer: true }));
-  createEffect(on(activeDiff, (v) => saveStr('active-diff', v), { defer: true }));
+  createEffect(on(expanded, (s) => { const r = activeRepo(); if (r) saveSet(`concept-expanded:${r}`, s); }, { defer: true }));
+  createEffect(on(flowExpanded, (s) => { const r = activeRepo(); if (r) saveSet(`flow-expanded:${r}`, s); }, { defer: true }));
+  createEffect(on(activeFlows, (s) => { const r = activeRepo(); if (r) saveSet(`active-flows:${r}`, s); }, { defer: true }));
+  createEffect(on(activeDiff, (v) => { const r = activeRepo(); if (r) saveStr(`active-diff:${r}`, v); }, { defer: true }));
 
-  // ── flow helpers ──
-  /** Unique diff sources with total affected-step counts, sorted alphabetically */
+  // ── flow helpers (unchanged) ──
   const diffSources = (): [string, number][] => {
     const fm = flows();
     if (!fm) return [];
@@ -305,22 +388,20 @@ export function App() {
     return diffSources().filter(([src]) => !q || src.toLowerCase().includes(q));
   };
 
-  // ── diff modal (Monaco code viewer) ──
+  // ── diff modal — now fetches from server API ──
   function branchSlug(name: string): string {
     return name.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
   }
   const diffDataCache = new Map<string, Record<string, { original: string; modified: string }> | null>();
   async function handleCodeRefClick(codeRefPath: string) {
     const diff = activeDiff();
-    if (!diff || !diff.startsWith('branch: ')) return;
+    const repo = activeRepo();
+    if (!diff || !diff.startsWith('branch: ') || !repo) return;
     const branchName = diff.slice(8);
     const slug = branchSlug(branchName);
     if (!diffDataCache.has(slug)) {
-      try {
-        const res = await fetch(`/diffs/${slug}.json`);
-        const json = res.ok ? await res.json() : null;
-        diffDataCache.set(slug, json?.files ?? null);
-      } catch { diffDataCache.set(slug, null); }
+      const data = await api.getDiff(repo, slug);
+      diffDataCache.set(slug, data?.files ?? null);
     }
     const files = diffDataCache.get(slug);
     if (!files) return;
@@ -346,7 +427,6 @@ export function App() {
   const selFlowStep = (): { flow: string; step: FlowStep } | undefined => {
     const fid = flowStepSel();
     if (!fid) return undefined;
-    // flowStepSel stores "flowId:stepId"
     const fm = flows();
     if (!fm) return undefined;
     for (const f of fm.flows) {
@@ -356,12 +436,53 @@ export function App() {
     return undefined;
   };
 
+  const currentRepoName = () => {
+    const id = activeRepo();
+    return id ? repos().find((r) => r.id === id)?.name ?? id : 'no repo selected';
+  };
+
   return (
     <div class="app">
       <div id="sidebar">
         <div id="sidebar-header">
           <h1>archwire</h1>
-          <div class="sub">{cm()?.system ?? '—'} · architecture planning</div>
+          <div class="repo-selector">
+            <button class="repo-btn" onClick={() => setShowRepoPicker(!showRepoPicker())}>
+              <span class="repo-name">{currentRepoName()}</span>
+              <span class="repo-caret">{showRepoPicker() ? '▲' : '▼'}</span>
+            </button>
+            <Show when={showRepoPicker()}>
+              <div class="repo-dropdown">
+                <div class="repo-add">
+                  <input
+                    type="text"
+                    placeholder="local path or GitHub URL…"
+                    value={repoInput()}
+                    onInput={(e) => setRepoInput(e.currentTarget.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') addRepo(); }}
+                    disabled={addingRepo()}
+                  />
+                  <button onClick={addRepo} disabled={addingRepo() || !repoInput().trim()}>
+                    {addingRepo() ? '…' : '+'}
+                  </button>
+                </div>
+                <For each={repos()}>
+                  {(r) => (
+                    <div class="repo-item" classList={{ active: activeRepo() === r.id }}>
+                      <span class="repo-item-name" onClick={() => selectRepo(r.id)}>
+                        {r.name}
+                        <span class="repo-item-source">{r.source}</span>
+                      </span>
+                      <button class="repo-item-remove" onClick={(e) => { e.stopPropagation(); removeRepo(r.id); }} title="remove">×</button>
+                    </div>
+                  )}
+                </For>
+                <Show when={repos().length === 0}>
+                  <div class="repo-empty">Add a repository to start.</div>
+                </Show>
+              </div>
+            </Show>
+          </div>
         </div>
         <div id="controls">
           <button class="ctrl-btn" disabled={!canUndo()} onClick={undo} title="undo (Ctrl+Z)">↶ undo</button>
@@ -375,7 +496,17 @@ export function App() {
         </div>
 
         <div id="details">
-          <Show when={cm() || flows()} fallback={<div class="detail-row">{err() ?? 'loading…'}</div>}>
+          <Show when={repoLoading()}>
+            <div class="detail-row">Loading repo data…</div>
+          </Show>
+          <Show when={!repoLoading() && !activeRepo()}>
+            <div class="detail-row">Select or add a repository to begin.</div>
+          </Show>
+          <Show when={!repoLoading() && activeRepo() && (cm() || flows())} fallback={
+            <Show when={!repoLoading() && activeRepo()}>
+              <div class="detail-row">{err() ?? 'loading…'}</div>
+            </Show>
+          }>
             <Switch
               fallback={
                 <Switch fallback={<div class="detail-row">loading…</div>}>
@@ -571,6 +702,37 @@ export function App() {
           </Show>
         </div>
 
+        {/* chat panel at the bottom of the sidebar */}
+        <Show when={activeRepo()}>
+          <div id="chat-panel">
+            <h3>Ask about this repo</h3>
+            <div class="chat-messages">
+              <For each={chatMessages()}>
+                {(msg) => (
+                  <div class={`chat-msg chat-${msg.role}`}>
+                    <span class="chat-role">{msg.role === 'user' ? 'you' : 'llm'}</span>
+                    <span class="chat-text">{msg.text}</span>
+                  </div>
+                )}
+              </For>
+              <Show when={chatLoading()}>
+                <div class="chat-msg chat-assistant"><span class="chat-role">llm</span><span class="chat-text thinking">thinking…</span></div>
+              </Show>
+            </div>
+            <div class="chat-input">
+              <input
+                type="text"
+                placeholder="Ask a question…"
+                value={chatInput()}
+                onInput={(e) => setChatInput(e.currentTarget.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) sendChat(); }}
+                disabled={chatLoading()}
+              />
+              <button onClick={sendChat} disabled={chatLoading() || !chatInput().trim()}>↵</button>
+            </div>
+          </div>
+        </Show>
+
         <div id="stats">
           <Show when={cm()}>
             {(m) => <>{m().concepts.length} concepts · {code().length} code nodes · {m().system}</>}
@@ -580,7 +742,7 @@ export function App() {
 
       <div id="main">
         <div class="canvas-holder">
-        <Switch fallback={<div class="empty">{err() ?? 'loading…'}</div>}>
+        <Switch fallback={<div class="empty">{err() ?? (activeRepo() ? 'loading…' : 'select a repository')}</div>}>
           <Match when={view() === 'concepts' && cm()}>
             {(m) => (
               <ConceptView

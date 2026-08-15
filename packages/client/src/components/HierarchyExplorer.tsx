@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from 'solid-js';
-import type { CodeNode, ConceptModel } from '../lib/concepts';
+import type { CodeNode, ConceptModel } from '@archwire/core';
 
 interface Item {
   id: string;
