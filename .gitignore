@@ -2,6 +2,7 @@ node_modules/
 dist/
 
 # server runtime data (repos, extractions, config)
+data/
 packages/server/data/
 
 *.log
