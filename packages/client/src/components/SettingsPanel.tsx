@@ -22,9 +22,18 @@ export function SettingsPanel(props: { onClose: () => void }) {
 
   async function fetchModels() {
     setModelsLoading(true);
+    const prev = model();
     try {
       const res = await api.getLlmModels();
       setModels(res.models);
+      // After <For> re-renders the <option> elements, the browser resets the
+      // <select> to the first option. SolidJS won't re-apply the value binding
+      // because model() hasn't changed. Force a re-sync via microtask.
+      queueMicrotask(() => {
+        const target = prev && res.models.includes(prev) ? prev : (res.models[0] ?? '');
+        setModel('');
+        setModel(target);
+      });
     } catch {
       setModels([]);
     } finally {
@@ -46,18 +55,23 @@ export function SettingsPanel(props: { onClose: () => void }) {
     }
   }
 
-  async function handleSave() {
+  async function saveHost() {
     setSaving(true);
     setSaveMsg(null);
     try {
       await api.setLlmConfig({ host: host(), model: model() });
       setSaveMsg('Saved');
       setTimeout(() => setSaveMsg(null), 2000);
+      await fetchModels();
     } catch (e) {
       setSaveMsg(`Error: ${(e as Error).message}`);
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleSave() {
+    await saveHost();
   }
 
   return (
@@ -95,7 +109,7 @@ export function SettingsPanel(props: { onClose: () => void }) {
                 </For>
               </Show>
             </select>
-            <button class="ctrl-btn" onClick={fetchModels} disabled={modelsLoading()} title="refresh models">↻</button>
+            <button class="ctrl-btn" onClick={saveHost} disabled={modelsLoading() || saving()} title="save host & refresh models">↻</button>
           </div>
 
           <div class="settings-actions">

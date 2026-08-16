@@ -82,7 +82,12 @@ router.post('/:id/extract/concepts', async (req, res) => {
 
   try {
     const result = await extractConcepts(repo.id, repo.path, (phase, message) => {
-      send({ phase, message })
+      if (phase === 'streaming') {
+        // token chunk — send as a token event (client accumulates)
+        send({ phase: 'token', token: message })
+      } else {
+        send({ phase, message })
+      }
     })
     send({ phase: 'done', message: `Extracted ${result.concepts.length} concepts`, result })
   } catch (e) {
@@ -96,7 +101,7 @@ router.post('/:id/extract/flows', async (req, res) => {
   const repo = repos.getRepo(req.params.id)
   if (!repo) return res.status(404).json({ error: 'repo not found' })
 
-  const { scopes } = req.body as { scopes?: ScopeEntry[] }
+  const { scopes } = (req.body ?? {}) as { scopes?: ScopeEntry[] }
   if (!scopes?.length) {
     // no explicit scopes — we'll auto-generate them from concepts below, but
     // fail fast (plain JSON, not SSE) if there's nothing to derive them from
@@ -131,9 +136,15 @@ router.post('/:id/extract/flows', async (req, res) => {
       }
     }
 
-    const results = await extractAllFlows(repo.id, repo.path, finalScopes, (current, total, scope) => {
-      send({ phase: 'extracting', message: `Flow ${current}/${total}: ${scope}`, current, total })
-    })
+    const results = await extractAllFlows(
+      repo.id, repo.path, finalScopes,
+      (current, total, scope) => {
+        send({ phase: 'extracting', message: `Flow ${current}/${total}: ${scope}`, current, total })
+      },
+      (token) => {
+        send({ phase: 'token', token })
+      },
+    )
     send({ phase: 'done', message: `Extracted ${results.length} flows`, results })
   } catch (e) {
     send({ phase: 'error', message: (e as Error).message })

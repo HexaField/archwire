@@ -6,7 +6,7 @@ import type { FlowModel, ScopeEntry, ConceptModel } from '@archwire/core'
 import { findRelevantFiles, readSpecificFiles } from './files.ts'
 import { repoDataDir } from '../lib/repos.ts'
 import { loadConfig } from '../lib/config.ts'
-import { chat } from '../lib/llm.ts'
+import { chat, extractJson } from '../lib/llm.ts'
 
 const SYSTEM_PROMPT = `You are a code architecture analyst. You produce structured JSON describing execution flow diagrams for a codebase.
 
@@ -61,6 +61,7 @@ export async function extractFlow(
   repoPath: string,
   scope: ScopeEntry,
   merge: boolean,
+  onToken?: (token: string) => void,
 ): Promise<FlowExtractionResult> {
   const scopeText = scope.scope
   const flowId = scopeText.replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 60)
@@ -110,17 +111,12 @@ export async function extractFlow(
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userPrompt },
     ],
-    { temperature: 0.1 },
+    { temperature: 0.1, numPredict: 16384, onToken },
   )
-
-  // parse JSON from response
-  let jsonStr = content
-  const fenceMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (fenceMatch) jsonStr = fenceMatch[1]
 
   let flowData: FlowModel
   try {
-    flowData = JSON.parse(jsonStr.trim())
+    flowData = JSON.parse(extractJson(content))
   } catch (e) {
     throw new Error(`Failed to parse LLM response as JSON: ${(e as Error).message}`)
   }
@@ -163,13 +159,14 @@ export async function extractAllFlows(
   repoPath: string,
   scopes: ScopeEntry[],
   onProgress?: (current: number, total: number, scope: string) => void,
+  onToken?: (token: string) => void,
 ): Promise<FlowExtractionResult[]> {
   const results: FlowExtractionResult[] = []
 
   for (let i = 0; i < scopes.length; i++) {
     onProgress?.(i + 1, scopes.length, scopes[i].scope)
     try {
-      const result = await extractFlow(repoId, repoPath, scopes[i], i > 0)
+      const result = await extractFlow(repoId, repoPath, scopes[i], i > 0, onToken)
       results.push(result)
     } catch (e) {
       console.error(`flow extraction failed for "${scopes[i].scope}": ${(e as Error).message}`)

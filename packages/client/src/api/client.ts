@@ -27,9 +27,19 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ── SSE consumer helper ──
 
+export interface SSEEvent {
+  phase: string
+  message?: string
+  token?: string
+  current?: number
+  total?: number
+  result?: unknown
+  results?: unknown[]
+}
+
 async function consumeSSE(
   url: string,
-  onProgress: (event: { phase: string; message: string; current?: number; total?: number; result?: unknown; results?: unknown[] }) => void,
+  onProgress: (event: SSEEvent) => void,
 ): Promise<void> {
   const res = await fetch(`${BASE}${url}`, { method: 'POST' })
   if (!res.ok) {
@@ -86,14 +96,14 @@ export const getDiff = (repoId: string, slug: string) =>
 
 export function extractConcepts(
   repoId: string,
-  onProgress: (event: { phase: string; message: string; result?: unknown }) => void,
+  onProgress: (event: SSEEvent) => void,
 ): Promise<void> {
   return consumeSSE(`/repos/${repoId}/extract/concepts`, onProgress)
 }
 
 export function extractFlows(
   repoId: string,
-  onProgress: (event: { phase: string; message: string; current?: number; total?: number; results?: unknown[] }) => void,
+  onProgress: (event: SSEEvent) => void,
 ): Promise<void> {
   return consumeSSE(`/repos/${repoId}/extract/flows`, onProgress)
 }

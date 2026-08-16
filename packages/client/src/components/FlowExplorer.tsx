@@ -34,8 +34,9 @@ export function FlowExplorer(props: {
   const stepsByFlow = new Map<string, FlowStep[]>();
   const childSteps = new Map<string, FlowStep[]>();
   for (const flow of props.model.flows) {
-    stepsByFlow.set(flow.id, flow.steps);
-    for (const step of flow.steps) {
+    const steps = flow.steps ?? [];
+    stepsByFlow.set(flow.id, steps);
+    for (const step of steps) {
       if (step.parentId) {
         const key = `${flow.id}:${step.parentId}`;
         const arr = childSteps.get(key) ?? [];
@@ -84,7 +85,7 @@ export function FlowExplorer(props: {
         selectId: `${flowId}:${s.id}`,
       });
     }
-    step.codeRefs.forEach((ref, i) => {
+    (step.codeRefs ?? []).forEach((ref, i) => {
       kids.push({
         id: `${flowId}:${stepId}:ref:${i}`,
         label: `${ref.path}${ref.line ? `:${ref.line}` : ''}`,

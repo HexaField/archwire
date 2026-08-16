@@ -1,6 +1,7 @@
 import { createSignal, Show } from 'solid-js';
 import type { ConceptModel, FlowModel } from '@archwire/core';
 import type { Accessor } from 'solid-js';
+import type { SSEEvent } from '../api/client';
 import * as api from '../api/client';
 
 interface ExtractionPanelProps {
@@ -16,6 +17,9 @@ export function ExtractionPanel(props: ExtractionPanelProps) {
   const [message, setMessage] = createSignal<string | null>(null);
   const [progress, setProgress] = createSignal<{ current: number; total: number } | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  const [streamText, setStreamText] = createSignal('');
+
+  let streamRef: HTMLPreElement | undefined;
 
   const hasConcepts = () => {
     const c = props.concepts();
@@ -30,23 +34,37 @@ export function ExtractionPanel(props: ExtractionPanelProps) {
   const showConceptBtn = () => !hasConcepts() && !extracting();
   const showFlowBtn = () => hasConcepts() && !hasFlows() && !extracting();
 
+  function handleEvent(evt: SSEEvent) {
+    if (evt.phase === 'token' && evt.token) {
+      setStreamText(prev => prev + evt.token);
+      // auto-scroll the stream view
+      if (streamRef) streamRef.scrollTop = streamRef.scrollHeight;
+    } else if (evt.phase === 'error') {
+      setError(evt.message ?? 'unknown error');
+    } else if (evt.phase === 'done') {
+      props.onDataReload(props.repoId);
+    } else {
+      setPhase(evt.phase ?? null);
+      setMessage(evt.message ?? null);
+      if (evt.current != null && evt.total != null) {
+        setProgress({ current: evt.current, total: evt.total });
+      }
+      // reset stream text on phase change (new LLM call starting)
+      if (evt.phase && evt.phase !== 'token') {
+        setStreamText('');
+      }
+    }
+  }
+
   async function handleExtractConcepts() {
     setExtracting(true);
     setError(null);
     setPhase(null);
     setMessage(null);
     setProgress(null);
+    setStreamText('');
     try {
-      await api.extractConcepts(props.repoId, (evt) => {
-        setPhase(evt.phase);
-        setMessage(evt.message);
-        if (evt.phase === 'error') {
-          setError(evt.message);
-        }
-        if (evt.phase === 'done') {
-          props.onDataReload(props.repoId);
-        }
-      });
+      await api.extractConcepts(props.repoId, handleEvent);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -60,20 +78,9 @@ export function ExtractionPanel(props: ExtractionPanelProps) {
     setPhase(null);
     setMessage(null);
     setProgress(null);
+    setStreamText('');
     try {
-      await api.extractFlows(props.repoId, (evt) => {
-        setPhase(evt.phase);
-        setMessage(evt.message);
-        if (evt.current != null && evt.total != null) {
-          setProgress({ current: evt.current, total: evt.total });
-        }
-        if (evt.phase === 'error') {
-          setError(evt.message);
-        }
-        if (evt.phase === 'done') {
-          props.onDataReload(props.repoId);
-        }
-      });
+      await api.extractFlows(props.repoId, handleEvent);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -97,14 +104,16 @@ export function ExtractionPanel(props: ExtractionPanelProps) {
 
       <Show when={extracting()}>
         <div class="extraction-progress">
-          <div class="extraction-spinner" />
           <div class="extraction-status">
-            <Show when={phase()}>
-              <span class="extraction-phase">{phase()}</span>
-            </Show>
-            <Show when={message()}>
-              <span class="extraction-message">{message()}</span>
-            </Show>
+            <div class="extraction-status-row">
+              <div class="extraction-spinner" />
+              <Show when={phase()}>
+                <span class="extraction-phase">{phase()}</span>
+              </Show>
+              <Show when={message()}>
+                <span class="extraction-message">{message()}</span>
+              </Show>
+            </div>
             <Show when={progress()}>
               {(p) => (
                 <div class="extraction-bar-wrap">
@@ -114,6 +123,9 @@ export function ExtractionPanel(props: ExtractionPanelProps) {
               )}
             </Show>
           </div>
+          <Show when={streamText().length > 0}>
+            <pre class="extraction-stream" ref={streamRef}>{streamText()}</pre>
+          </Show>
         </div>
       </Show>
 

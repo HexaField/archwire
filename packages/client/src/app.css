@@ -1261,8 +1261,8 @@ code.path,
 }
 .extraction-progress {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px 0;
 }
 .extraction-spinner {
@@ -1273,28 +1273,44 @@ code.path,
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   flex-shrink: 0;
-  margin-top: 1px;
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 .extraction-status {
-  flex: 1;
   min-width: 0;
 }
+.extraction-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .extraction-phase {
-  display: block;
   font-size: 10px;
   color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  margin-bottom: 2px;
+  flex-shrink: 0;
 }
 .extraction-message {
-  display: block;
   font-size: 10px;
   color: var(--text);
   word-break: break-word;
+}
+.extraction-stream {
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 10px;
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  color: var(--muted);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
 }
 .extraction-bar-wrap {
   position: relative;
