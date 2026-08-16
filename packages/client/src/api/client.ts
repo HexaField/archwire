@@ -8,7 +8,6 @@ import type {
   ConceptModel,
   CodeModel,
   ChangeModel,
-  ScopeEntry,
   AskResponse,
 } from '@archwire/core'
 
@@ -24,6 +23,34 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(`${res.status}: ${body}`)
   }
   return res.json() as Promise<T>
+}
+
+// ── SSE consumer helper ──
+
+async function consumeSSE(
+  url: string,
+  onProgress: (event: { phase: string; message: string; current?: number; total?: number; result?: unknown; results?: unknown[] }) => void,
+): Promise<void> {
+  const res = await fetch(`${BASE}${url}`, { method: 'POST' })
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`${res.status}: ${body}`)
+  }
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop()!
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        try { onProgress(JSON.parse(line.slice(6))) } catch { /* malformed JSON */ }
+      }
+    }
+  }
 }
 
 // ── repos ──
@@ -55,16 +82,24 @@ export const getDiff = (repoId: string, slug: string) =>
     `/repos/${repoId}/diffs/${slug}`,
   ).catch(() => null)
 
-// ── extraction ──
+// ── extraction (SSE) ──
 
-export const extractFlows = (repoId: string, scopes: ScopeEntry[]) =>
-  json<{ results: unknown[]; total: number }>(`/repos/${repoId}/extract/flows`, {
-    method: 'POST',
-    body: JSON.stringify({ scopes }),
-  })
+export function extractConcepts(
+  repoId: string,
+  onProgress: (event: { phase: string; message: string; result?: unknown }) => void,
+): Promise<void> {
+  return consumeSSE(`/repos/${repoId}/extract/concepts`, onProgress)
+}
+
+export function extractFlows(
+  repoId: string,
+  onProgress: (event: { phase: string; message: string; current?: number; total?: number; results?: unknown[] }) => void,
+): Promise<void> {
+  return consumeSSE(`/repos/${repoId}/extract/flows`, onProgress)
+}
 
 export const extractBranches = (repoId: string, doFetch = false) =>
-  json<{ branches: number; overlays: number }>(`/repos/${repoId}/extract/branches`, {
+  json<{ branches: number; overlays: number; diffs: number }>(`/repos/${repoId}/extract/branches`, {
     method: 'POST',
     body: JSON.stringify({ fetch: doFetch }),
   })
@@ -76,10 +111,13 @@ export const getLlmConfig = () => json<LlmConfig>('/llm/config')
 export const setLlmConfig = (config: Partial<LlmConfig>) =>
   json<LlmConfig>('/llm/config', { method: 'PUT', body: JSON.stringify(config) })
 
-export const testLlm = (llmUrl?: string) =>
+export const getLlmModels = () =>
+  json<{ models: string[] }>('/llm/models')
+
+export const testLlm = () =>
   json<{ ok: boolean; models?: string[]; error?: string }>('/llm/test', {
     method: 'POST',
-    body: JSON.stringify({ llmUrl }),
+    body: JSON.stringify({}),
   })
 
 export const askRepo = (repoId: string, question: string) =>

@@ -6,6 +6,9 @@ import { FlowView } from './components/FlowView';
 import { FlowExplorer } from './components/FlowExplorer';
 import { GitGraph } from './components/GitGraph';
 import { HierarchyExplorer } from './components/HierarchyExplorer';
+import { SettingsPanel } from './components/SettingsPanel';
+import { ExtractionPanel } from './components/ExtractionPanel';
+import { BranchExplorer } from './components/BranchExplorer';
 import * as api from './api/client';
 
 const DiffModal = lazy(() => import('./components/DiffModal'));
@@ -67,6 +70,9 @@ export function App() {
   const [flowExpanded, setFlowExpanded] = createSignal<Set<string>>(new Set());
   const [diffFilter, setDiffFilter] = createSignal('');
   const [diffModal, setDiffModal] = createSignal<{ files: DiffFile[]; codeRefPath: string; branch: string } | null>(null);
+
+  // settings panel
+  const [showSettings, setShowSettings] = createSignal(false);
 
   // ── load repo data from server ──
   async function loadRepoData(repoId: string) {
@@ -445,7 +451,10 @@ export function App() {
     <div class="app">
       <div id="sidebar">
         <div id="sidebar-header">
-          <h1>archwire</h1>
+          <div style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'space-between' }}>
+            <h1>archwire</h1>
+            <button class="settings-gear" onClick={() => setShowSettings(!showSettings())} title="LLM Settings">⚙</button>
+          </div>
           <div class="repo-selector">
             <button class="repo-btn" onClick={() => setShowRepoPicker(!showRepoPicker())}>
               <span class="repo-name">{currentRepoName()}</span>
@@ -505,6 +514,12 @@ export function App() {
           <Show when={!repoLoading() && activeRepo() && (cm() || flows())} fallback={
             <Show when={!repoLoading() && activeRepo()}>
               <div class="detail-row">{err() ?? 'loading…'}</div>
+              <ExtractionPanel
+                repoId={activeRepo()!}
+                concepts={concepts}
+                flows={flows}
+                onDataReload={loadRepoData}
+              />
             </Show>
           }>
             <Switch
@@ -560,6 +575,13 @@ export function App() {
                             </For>
                           </div>
                         </Show>
+                        <BranchExplorer
+                          repoId={activeRepo()!}
+                          flows={flows}
+                          activeDiff={activeDiff}
+                          setActiveDiff={setActiveDiff}
+                          onDataReload={loadRepoData}
+                        />
                         <h3>How to use</h3>
                         <div class="detail-row"><span class="detail-label">Toggle</span> flows on/off above</div>
                         <div class="detail-row"><span class="detail-label">Click</span> a step → see detail + code refs</div>
@@ -579,6 +601,14 @@ export function App() {
                           <div class="stat-card"><div class="stat-number">{m().threads.length}</div><div class="stat-label">threads</div></div>
                           <div class="stat-card"><div class="stat-number">{changes()?.nodes.length ?? 0}</div><div class="stat-label">changes</div></div>
                         </div>
+                        <Show when={!flows()}>
+                          <ExtractionPanel
+                            repoId={activeRepo()!}
+                            concepts={concepts}
+                            flows={flows}
+                            onDataReload={loadRepoData}
+                          />
+                        </Show>
                         <h3>How to use</h3>
                         <div class="detail-row"><span class="detail-label">Click</span> a node → select it + see relations</div>
                         <div class="detail-row"><span class="detail-label">Tree →</span> open / close nodes (↑↓ ←→ ⏎)</div>
@@ -823,6 +853,9 @@ export function App() {
             <DiffModal {...dm()} onClose={() => setDiffModal(null)} />
           </Suspense>
         )}
+      </Show>
+      <Show when={showSettings()}>
+        <SettingsPanel onClose={() => setShowSettings(false)} />
       </Show>
     </div>
   );

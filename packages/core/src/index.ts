@@ -28,8 +28,8 @@ export interface RepoInfo {
 }
 
 export interface LlmConfig {
-  llmUrl: string
-  model: string
+  host: string        // Ollama host URL, e.g. "http://localhost:11434"
+  model: string       // model name, e.g. "llama3.2"
   contextBudget: number
 }
 

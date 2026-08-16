@@ -2,10 +2,11 @@ import { Router } from 'express'
 import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import * as repos from '../lib/repos.ts'
-import { loadConfig } from '../lib/config.ts'
 import { extractAllFlows } from '../extract/flows.ts'
+import { extractConcepts } from '../extract/concepts.ts'
 import { scanBranches } from '../extract/branches.ts'
-import type { ScopeEntry } from '@archwire/core'
+import { chat } from '../lib/llm.ts'
+import type { ScopeEntry, ConceptModel } from '@archwire/core'
 
 const router = Router()
 
@@ -64,19 +65,80 @@ router.get('/:id/diffs/:slug', (req, res) => {
 
 // ── extraction ──
 
+router.post('/:id/extract/concepts', async (req, res) => {
+  const repo = repos.getRepo(req.params.id)
+  if (!repo) return res.status(404).json({ error: 'repo not found' })
+
+  // SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  })
+
+  const send = (data: object) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`)
+  }
+
+  try {
+    const result = await extractConcepts(repo.id, repo.path, (phase, message) => {
+      send({ phase, message })
+    })
+    send({ phase: 'done', message: `Extracted ${result.concepts.length} concepts`, result })
+  } catch (e) {
+    send({ phase: 'error', message: (e as Error).message })
+  } finally {
+    res.end()
+  }
+})
+
 router.post('/:id/extract/flows', async (req, res) => {
   const repo = repos.getRepo(req.params.id)
   if (!repo) return res.status(404).json({ error: 'repo not found' })
 
-  const { scopes } = req.body as { scopes: ScopeEntry[] }
-  if (!scopes?.length) return res.status(400).json({ error: 'scopes required' })
+  const { scopes } = req.body as { scopes?: ScopeEntry[] }
+  if (!scopes?.length) {
+    // no explicit scopes — we'll auto-generate them from concepts below, but
+    // fail fast (plain JSON, not SSE) if there's nothing to derive them from
+    const conceptsPath = path.join(repos.repoDataDir(repo.id), 'concepts.json')
+    if (!existsSync(conceptsPath)) {
+      return res.status(400).json({ error: 'extract concepts first, or provide scopes' })
+    }
+  }
 
-  const config = loadConfig()
+  // SSE headers
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  })
+
+  const send = (data: object) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`)
+  }
+
   try {
-    const results = await extractAllFlows(repo.id, repo.path, scopes, config)
-    res.json({ results, total: results.length })
+    // if no scopes provided, derive one per thread from the concept model
+    let finalScopes = scopes
+    if (!finalScopes?.length) {
+      const concepts: ConceptModel = JSON.parse(
+        readFileSync(path.join(repos.repoDataDir(repo.id), 'concepts.json'), 'utf8'),
+      )
+      finalScopes = concepts.threads.map(t => ({ scope: t.name }))
+      if (!finalScopes.length) {
+        // fall back to pillar concepts if there are no threads
+        finalScopes = concepts.concepts.filter(c => c.pillar).map(c => ({ scope: c.name, files: c.implementedBy }))
+      }
+    }
+
+    const results = await extractAllFlows(repo.id, repo.path, finalScopes, (current, total, scope) => {
+      send({ phase: 'extracting', message: `Flow ${current}/${total}: ${scope}`, current, total })
+    })
+    send({ phase: 'done', message: `Extracted ${results.length} flows`, results })
   } catch (e) {
-    res.status(500).json({ error: (e as Error).message })
+    send({ phase: 'error', message: (e as Error).message })
+  } finally {
+    res.end()
   }
 })
 
@@ -101,7 +163,6 @@ router.post('/:id/ask', async (req, res) => {
   const { question } = req.body as { question: string }
   if (!question) return res.status(400).json({ error: 'question required' })
 
-  const config = loadConfig()
   const dataDir = repos.repoDataDir(repo.id)
 
   // build context from extracted data
@@ -132,31 +193,13 @@ router.post('/:id/ask', async (req, res) => {
   }
 
   try {
-    const llmRes = await fetch(config.llmUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a helpful code architecture assistant. Answer questions about a codebase based on the extracted architecture data provided. Be concise and specific.',
-          },
-          { role: 'user', content: `${context}QUESTION: ${question}` },
-        ],
-        temperature: 0.3,
-        max_tokens: 4096,
-        ...(config.model ? { model: config.model } : {}),
-      }),
-    })
-
-    if (!llmRes.ok) {
-      const text = await llmRes.text()
-      return res.status(502).json({ error: `LLM error: ${text}` })
-    }
-
-    const data = await llmRes.json() as { choices?: { message?: { content?: string } }[] }
-    const answer = data.choices?.[0]?.message?.content ?? 'No response from LLM'
-
+    const answer = await chat([
+      {
+        role: 'system',
+        content: 'You are a helpful code architecture assistant. Answer questions about a codebase based on the extracted architecture data provided. Be concise and specific.',
+      },
+      { role: 'user', content: `${context}QUESTION: ${question}` },
+    ], { temperature: 0.3 })
     res.json({ answer, sources: [] })
   } catch (e) {
     res.status(502).json({ error: `LLM request failed: ${(e as Error).message}` })

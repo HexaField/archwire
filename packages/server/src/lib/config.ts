@@ -14,7 +14,7 @@ export function getDataDir(): string {
 }
 
 const DEFAULT_CONFIG: LlmConfig = {
-  llmUrl: 'http://localhost:11434/v1/chat/completions',
+  host: 'http://localhost:11434',
   model: '',
   contextBudget: 80000,
 }

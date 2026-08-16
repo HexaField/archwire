@@ -2,9 +2,11 @@
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
-import type { FlowModel, LlmConfig, ScopeEntry, ConceptModel } from '@archwire/core'
+import type { FlowModel, ScopeEntry, ConceptModel } from '@archwire/core'
 import { findRelevantFiles, readSpecificFiles } from './files.ts'
 import { repoDataDir } from '../lib/repos.ts'
+import { loadConfig } from '../lib/config.ts'
+import { chat } from '../lib/llm.ts'
 
 const SYSTEM_PROMPT = `You are a code architecture analyst. You produce structured JSON describing execution flow diagrams for a codebase.
 
@@ -58,16 +60,16 @@ export async function extractFlow(
   repoId: string,
   repoPath: string,
   scope: ScopeEntry,
-  config: LlmConfig,
   merge: boolean,
 ): Promise<FlowExtractionResult> {
   const scopeText = scope.scope
   const flowId = scopeText.replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 60)
+  const { contextBudget } = loadConfig()
 
   // gather source context
   const files = scope.files?.length
-    ? readSpecificFiles(repoPath, scope.files, config.contextBudget)
-    : findRelevantFiles(repoPath, scopeText, config.contextBudget)
+    ? readSpecificFiles(repoPath, scope.files, contextBudget)
+    : findRelevantFiles(repoPath, scopeText, contextBudget)
 
   let sourceContext = ''
   if (files.length) {
@@ -103,29 +105,13 @@ export async function extractFlow(
   if (sourceContext) userPrompt += sourceContext
 
   // call LLM
-  const body: Record<string, unknown> = {
-    messages: [
+  const content = await chat(
+    [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userPrompt },
     ],
-    temperature: 0.1,
-    max_tokens: 16384,
-  }
-  if (config.model) body.model = config.model
-
-  const res = await fetch(config.llmUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`LLM error ${res.status}: ${text}`)
-  }
-
-  const response = await res.json() as { choices?: { message?: { content?: string } }[] }
-  const content = response.choices?.[0]?.message?.content ?? ''
+    { temperature: 0.1 },
+  )
 
   // parse JSON from response
   let jsonStr = content
@@ -176,7 +162,6 @@ export async function extractAllFlows(
   repoId: string,
   repoPath: string,
   scopes: ScopeEntry[],
-  config: LlmConfig,
   onProgress?: (current: number, total: number, scope: string) => void,
 ): Promise<FlowExtractionResult[]> {
   const results: FlowExtractionResult[] = []
@@ -184,7 +169,7 @@ export async function extractAllFlows(
   for (let i = 0; i < scopes.length; i++) {
     onProgress?.(i + 1, scopes.length, scopes[i].scope)
     try {
-      const result = await extractFlow(repoId, repoPath, scopes[i], config, i > 0)
+      const result = await extractFlow(repoId, repoPath, scopes[i], i > 0)
       results.push(result)
     } catch (e) {
       console.error(`flow extraction failed for "${scopes[i].scope}": ${(e as Error).message}`)

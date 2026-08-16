@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { loadConfig, saveConfig } from '../lib/config.ts'
+import { listModels } from '../lib/llm.ts'
 import type { LlmConfig } from '@archwire/core'
 
 const router = Router()
@@ -16,21 +17,21 @@ router.put('/config', (req, res) => {
   res.json(updated)
 })
 
-// test endpoint connectivity
-router.post('/test', async (req, res) => {
-  const config = loadConfig()
-  const url = (req.body as { llmUrl?: string }).llmUrl ?? config.llmUrl
-
+// list models available on the configured Ollama host
+router.get('/models', async (_req, res) => {
   try {
-    // try the models endpoint first (OpenAI-compatible)
-    const modelsUrl = url.replace(/\/chat\/completions$/, '/models')
-    const r = await fetch(modelsUrl, { signal: AbortSignal.timeout(5000) })
-    if (r.ok) {
-      const data = await r.json() as { data?: { id: string }[] }
-      const models = data.data?.map(m => m.id) ?? []
-      return res.json({ ok: true, models })
-    }
-    res.json({ ok: false, error: `${r.status} ${r.statusText}` })
+    const models = await listModels()
+    res.json({ models })
+  } catch (e) {
+    res.status(502).json({ error: (e as Error).message })
+  }
+})
+
+// test connectivity to the configured Ollama host
+router.post('/test', async (_req, res) => {
+  try {
+    const models = await listModels()
+    res.json({ ok: true, models })
   } catch (e) {
     res.json({ ok: false, error: (e as Error).message })
   }
