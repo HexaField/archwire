@@ -16,6 +16,47 @@ export interface BranchScanResult {
   branches: number
   overlays: number
   diffs: number
+  impact: BranchImpact
+}
+
+export interface BranchImpact {
+  added: string[]
+  modified: string[]
+  removed: string[]
+  severity: 'low' | 'medium' | 'high'
+}
+
+/** Categorise the impact of changed files against flow code refs. */
+function categorizeDiffImpact(
+  changedFiles: string[],
+  repoPath: string,
+  mergeBase: string,
+  branchRef: string,
+): BranchImpact {
+  const added: string[] = []
+  const modified: string[] = []
+  const removed: string[] = []
+
+  for (const file of changedFiles) {
+    let existsInBase = true
+    let existsInBranch = true
+    try {
+      execSync(`git show ${mergeBase}:${file}`, { cwd: repoPath, stdio: 'pipe' })
+    } catch { existsInBase = false }
+    try {
+      execSync(`git show ${branchRef}:${file}`, { cwd: repoPath, stdio: 'pipe' })
+    } catch { existsInBranch = false }
+
+    if (!existsInBase && existsInBranch) added.push(file)
+    else if (existsInBase && !existsInBranch) removed.push(file)
+    else modified.push(file)
+  }
+
+  const severity = removed.length > 2 || added.length > 5 ? 'high'
+    : removed.length > 0 || added.length > 2 ? 'medium'
+    : 'low'
+
+  return { added, modified, removed, severity }
 }
 
 export function scanBranches(
@@ -158,13 +199,36 @@ export function scanBranches(
   flowData.diffs.push(...newOverlays)
   writeFileSync(flowsPath, JSON.stringify(flowData, null, 2))
 
+  // aggregate impact across all branches
+  const allChanged = new Set<string>()
+  const aggregateImpact: BranchImpact = { added: [], modified: [], removed: [], severity: 'low' }
+  for (const branch of branches) {
+    try {
+      const mb = execSync(`git merge-base origin/${baseBranch} origin/${branch}`, {
+        cwd: repoPath, encoding: 'utf8', timeout: 10_000,
+      }).trim()
+      const files = execSync(`git diff --name-only ${mb}..origin/${branch}`, {
+        cwd: repoPath, encoding: 'utf8', maxBuffer: 5 * 1024 * 1024, timeout: 10_000,
+      }).trim().split('\n').filter(Boolean)
+
+      const impact = categorizeDiffImpact(files, repoPath, mb, `origin/${branch}`)
+      for (const f of impact.added) if (!allChanged.has(f)) { allChanged.add(f); aggregateImpact.added.push(f) }
+      for (const f of impact.removed) if (!allChanged.has(f)) { allChanged.add(f); aggregateImpact.removed.push(f) }
+      for (const f of impact.modified) if (!allChanged.has(f)) { allChanged.add(f); aggregateImpact.modified.push(f) }
+    } catch { continue }
+  }
+  aggregateImpact.severity = aggregateImpact.removed.length > 2 ? 'high'
+    : aggregateImpact.removed.length > 0 ? 'medium' : 'low'
+
   return {
     branches: branches.length,
     overlays: newOverlays.length,
     diffs: newOverlays.length,
+    impact: aggregateImpact,
   }
 }
 
+/** Detect the base branch from origin/HEAD. Falls back to 'main'. */
 function detectBaseBranch(repoPath: string): string {
   try {
     const head = execSync('git symbolic-ref refs/remotes/origin/HEAD', {
@@ -173,13 +237,6 @@ function detectBaseBranch(repoPath: string): string {
     }).trim()
     return head.replace('refs/remotes/origin/', '')
   } catch {
-    // fallback: check common names
-    for (const name of ['main', 'master', 'dev', 'develop']) {
-      try {
-        execSync(`git rev-parse --verify origin/${name}`, { cwd: repoPath, stdio: 'pipe' })
-        return name
-      } catch { continue }
-    }
     return 'main'
   }
 }

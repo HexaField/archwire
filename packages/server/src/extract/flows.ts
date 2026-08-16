@@ -161,15 +161,28 @@ export async function extractAllFlows(
   onProgress?: (current: number, total: number, scope: string) => void,
   onToken?: (token: string) => void,
 ): Promise<FlowExtractionResult[]> {
+  // deduplicate and validate scopes
+  const seen = new Set<string>()
+  const validScopes = scopes.filter(s => {
+    const key = s.scope.trim().toLowerCase()
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+
+  if (!validScopes.length) {
+    throw new Error('no valid scopes provided for flow extraction')
+  }
+
   const results: FlowExtractionResult[] = []
 
-  for (let i = 0; i < scopes.length; i++) {
-    onProgress?.(i + 1, scopes.length, scopes[i].scope)
+  for (let i = 0; i < validScopes.length; i++) {
+    onProgress?.(i + 1, validScopes.length, validScopes[i].scope)
     try {
-      const result = await extractFlow(repoId, repoPath, scopes[i], i > 0, onToken)
+      const result = await extractFlow(repoId, repoPath, validScopes[i], i > 0, onToken)
       results.push(result)
     } catch (e) {
-      console.error(`flow extraction failed for "${scopes[i].scope}": ${(e as Error).message}`)
+      console.error(`flow extraction failed for "${validScopes[i].scope}": ${(e as Error).message}`)
     }
   }
 

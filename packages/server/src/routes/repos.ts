@@ -165,6 +165,24 @@ router.post('/:id/extract/branches', (req, res) => {
   }
 })
 
+// ── repo health check ──
+
+router.get('/:id/health', (req, res) => {
+  const repo = repos.getRepo(req.params.id)
+  if (!repo) return res.status(404).json({ error: 'repo not found' })
+
+  const dataDir = repos.repoDataDir(repo.id)
+  const hasConcepts = existsSync(path.join(dataDir, 'concepts.json'))
+  const hasFlows = existsSync(path.join(dataDir, 'flows.json'))
+  const hasCode = existsSync(path.join(dataDir, 'code.json'))
+
+  res.json({
+    repo: repo.name,
+    extracted: { concepts: hasConcepts, flows: hasFlows, code: hasCode },
+    complete: hasConcepts && hasFlows && hasCode,
+  })
+})
+
 // ── ask LLM about the repo ──
 
 router.post('/:id/ask', async (req, res) => {
