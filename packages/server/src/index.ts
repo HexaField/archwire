@@ -1,11 +1,13 @@
 import cors from 'cors'
 import express from 'express'
 import { ensureDataDir } from './lib/config.ts'
+import { seedSelf } from './lib/repos.ts'
 import healthRouter from './routes/health.ts'
 import reposRouter from './routes/repos.ts'
 import llmRouter from './routes/llm.ts'
 
 ensureDataDir()
+seedSelf()
 
 const app = express()
 const port = parseInt(process.env.PORT ?? '3001')

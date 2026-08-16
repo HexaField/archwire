@@ -1,6 +1,6 @@
 // The concept model: the high-level semantic layer, extracted from a codebase.
-// Concepts are the domain ideas (Agent, Perspective, Neighbourhood…); threads are
-// cross-cutting flows that show how a capability pulls concepts together.
+// Concepts represent domain ideas; threads trace cross-cutting flows
+// that show how a capability pulls concepts together.
 
 export interface ConceptRelation {
   to: string; // concept id

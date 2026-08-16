@@ -93,3 +93,30 @@ export function removeRepo(id: string): boolean {
   saveRepos(repos)
   return true
 }
+
+/**
+ * Auto-register the archwire monorepo itself as the default project
+ * when the repos list sits empty (first run / fresh clone).
+ */
+export function seedSelf(): void {
+  if (loadRepos().length > 0) return
+
+  // walk up from this file to find the monorepo root (has package.json with name "archwire")
+  let dir = path.resolve(import.meta.dirname ?? '.', '..', '..', '..')
+  for (let i = 0; i < 10; i++) {
+    const pkgPath = path.join(dir, 'package.json')
+    if (existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+        if (pkg.name === 'archwire' && existsSync(path.join(dir, '.git'))) {
+          const info = addLocalRepo(dir)
+          console.log(`seeded self: ${info.name} (${dir})`)
+          return
+        }
+      } catch { /* skip */ }
+    }
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+}
